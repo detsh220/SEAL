@@ -1,17 +1,17 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "gtest/gtest.h"
 #include "seal/util/uintarith.h"
 #include <cstdint>
+#include "gtest/gtest.h"
 
 using namespace seal::util;
 using namespace std;
 
-namespace SEALTest
+namespace sealtest
 {
-   namespace util
-   {
+    namespace util
+    {
         TEST(UIntArith, AddUInt64Generic)
         {
             unsigned long long result;
@@ -42,10 +42,10 @@ namespace SEALTest
         }
 
 #if SEAL_COMPILER == SEAL_COMPILER_MSVC
-#pragma optimize ("", off)
+#pragma optimize("", off)
 #elif SEAL_COMPILER == SEAL_COMPILER_GCC
 #pragma GCC push_options
-#pragma GCC optimize ("O0")
+#pragma GCC optimize("O0")
 #elif SEAL_COMPILER == SEAL_COMPILER_CLANG
 #pragma clang optimize off
 #endif
@@ -77,10 +77,27 @@ namespace SEALTest
             ASSERT_EQ(0xFFFFFFFFFFFFFFFFULL, result);
             ASSERT_TRUE(add_uint64(0xF00F00F00F00F00FULL, 0x0FF0FF0FF0FF0FF0ULL, 1, &result));
             ASSERT_EQ(0x0ULL, result);
+
+            ASSERT_FALSE(add_uint64(0ULL, 0ULL, &result));
+            ASSERT_EQ(0ULL, result);
+            ASSERT_FALSE(add_uint64(1ULL, 1ULL, &result));
+            ASSERT_EQ(2ULL, result);
+            ASSERT_FALSE(add_uint64(1ULL, 0ULL, &result));
+            ASSERT_EQ(1ULL, result);
+            ASSERT_FALSE(add_uint64(0ULL, 1ULL, &result));
+            ASSERT_EQ(1ULL, result);
+            ASSERT_TRUE(add_uint64(0xFFFFFFFFFFFFFFFFULL, 1ULL, &result));
+            ASSERT_EQ(0ULL, result);
+            ASSERT_TRUE(add_uint64(1ULL, 0xFFFFFFFFFFFFFFFFULL, &result));
+            ASSERT_EQ(0ULL, result);
+            ASSERT_TRUE(add_uint64(2ULL, 0xFFFFFFFFFFFFFFFEULL, 0, &result));
+            ASSERT_EQ(0ULL, result);
+            ASSERT_FALSE(add_uint64(0xF00F00F00F00F00FULL, 0x0FF0FF0FF0FF0FF0ULL, 0, &result));
+            ASSERT_EQ(0xFFFFFFFFFFFFFFFFULL, result);
         }
 
 #if SEAL_COMPILER == SEAL_COMPILER_MSVC
-#pragma optimize ("", on)
+#pragma optimize("", on)
 #elif SEAL_COMPILER == SEAL_COMPILER_GCC
 #pragma GCC pop_options
 #elif SEAL_COMPILER == SEAL_COMPILER_CLANG
@@ -145,7 +162,42 @@ namespace SEALTest
             ASSERT_EQ(0xE01E01E01E01E01EULL, result);
         }
 
-        TEST(UIntArith, AddUIntUInt)
+        TEST(UIntArith, AddUInt128)
+        {
+            auto set_uint128 = [](uint64_t *destination, uint64_t val0, uint64_t val1) {
+                destination[0] = val0;
+                destination[1] = val1;
+            };
+
+            auto assert_uint128_eq = [](unsigned long long *test, unsigned long long expect0,
+                                        unsigned long long expect1) {
+                ASSERT_EQ(expect0, test[0]);
+                ASSERT_EQ(expect1, test[1]);
+            };
+
+            uint64_t operand1[2]{ 0, 0 };
+            uint64_t operand2[2]{ 0, 0 };
+            unsigned long long result[2]{ 0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL };
+            ASSERT_FALSE(add_uint128(operand1, operand2, result));
+            ASSERT_EQ(0, result[0] | result[1]);
+
+            set_uint128(operand1, 1, 1);
+            set_uint128(operand2, 1, 1);
+            ASSERT_FALSE(add_uint128(operand1, operand2, result));
+            assert_uint128_eq(result, 2, 2);
+
+            set_uint128(operand1, 0xFFFFFFFFFFFFFFFFULL, 0);
+            set_uint128(operand2, 1, 0);
+            ASSERT_FALSE(add_uint128(operand1, operand2, result));
+            assert_uint128_eq(result, 0, 1);
+
+            set_uint128(operand1, 0xFFFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL);
+            set_uint128(operand2, 1, 0);
+            ASSERT_TRUE(add_uint128(operand1, operand2, result));
+            assert_uint128_eq(result, 0, 0);
+        }
+
+        TEST(UIntArith, AddUInt)
         {
             MemoryPool &pool = *global_variables::global_memory_pool;
             auto ptr(allocate_uint(2, pool));
@@ -157,7 +209,7 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0xFFFFFFFFFFFFFFFF;
             ptr3[1] = 0xFFFFFFFFFFFFFFFF;
-            ASSERT_FALSE(add_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_FALSE(add_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[1]);
 
@@ -167,7 +219,7 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            ASSERT_FALSE(add_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_FALSE(add_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
 
@@ -177,7 +229,7 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            ASSERT_FALSE(add_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_FALSE(add_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
 
@@ -187,7 +239,7 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0xFFFFFFFFFFFFFFFF;
             ptr3[1] = 0xFFFFFFFFFFFFFFFF;
-            ASSERT_TRUE(add_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_TRUE(add_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[1]);
 
@@ -198,10 +250,10 @@ namespace SEALTest
             ptr3[0] = 0;
             ptr3[1] = 0;
 
-            ASSERT_TRUE(add_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_TRUE(add_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFE), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
-            ASSERT_TRUE(add_uint_uint(ptr.get(), ptr2.get(), 2, ptr.get()) != 0);
+            ASSERT_TRUE(add_uint(ptr.get(), ptr2.get(), 2, ptr.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFE), ptr[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr[1]);
 
@@ -211,7 +263,7 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            ASSERT_FALSE(add_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_FALSE(add_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
             ASSERT_EQ(1ULL, ptr3[1]);
 
@@ -221,15 +273,15 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            ASSERT_FALSE(add_uint_uint(ptr.get(), 2, ptr2.get(), 1, false, 2, ptr3.get()) != 0);
+            ASSERT_FALSE(add_uint(ptr.get(), 2, ptr2.get(), 1, false, 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(6), ptr3[1]);
-            ASSERT_FALSE(add_uint_uint(ptr.get(), 2, ptr2.get(), 1, true, 2, ptr3.get()) != 0);
+            ASSERT_FALSE(add_uint(ptr.get(), 2, ptr2.get(), 1, true, 2, ptr3.get()) != 0);
             ASSERT_EQ(1ULL, ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(6), ptr3[1]);
         }
 
-        TEST(UIntArith, SubUIntUInt)
+        TEST(UIntArith, SubUInt)
         {
             MemoryPool &pool = *global_variables::global_memory_pool;
             auto ptr(allocate_uint(2, pool));
@@ -241,7 +293,7 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0xFFFFFFFFFFFFFFFF;
             ptr3[1] = 0xFFFFFFFFFFFFFFFF;
-            ASSERT_FALSE(sub_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_FALSE(sub_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[1]);
 
@@ -251,7 +303,7 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            ASSERT_FALSE(sub_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_FALSE(sub_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
 
@@ -261,7 +313,7 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            ASSERT_FALSE(sub_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_FALSE(sub_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFE), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
 
@@ -271,10 +323,10 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            ASSERT_TRUE(sub_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_TRUE(sub_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
-            ASSERT_TRUE(sub_uint_uint(ptr.get(), ptr2.get(), 2, ptr.get()) != 0);
+            ASSERT_TRUE(sub_uint(ptr.get(), ptr2.get(), 2, ptr.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr[1]);
 
@@ -284,10 +336,10 @@ namespace SEALTest
             ptr2[1] = 0xFFFFFFFFFFFFFFFF;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            ASSERT_FALSE(sub_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_FALSE(sub_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[1]);
-            ASSERT_FALSE(sub_uint_uint(ptr.get(), ptr2.get(), 2, ptr.get()) != 0);
+            ASSERT_FALSE(sub_uint(ptr.get(), ptr2.get(), 2, ptr.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr[1]);
 
@@ -297,7 +349,7 @@ namespace SEALTest
             ptr2[1] = 0xFFFFFFFFFFFFFFFF;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            ASSERT_TRUE(sub_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_TRUE(sub_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
 
@@ -307,7 +359,7 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            ASSERT_FALSE(sub_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
+            ASSERT_FALSE(sub_uint(ptr.get(), ptr2.get(), 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[1]);
 
@@ -317,10 +369,10 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            ASSERT_FALSE(sub_uint_uint(ptr.get(), 2, ptr2.get(), 1, false, 2, ptr3.get()) != 0);
+            ASSERT_FALSE(sub_uint(ptr.get(), 2, ptr2.get(), 1, false, 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[1]);
-            ASSERT_FALSE(sub_uint_uint(ptr.get(), 2, ptr2.get(), 1, true, 2, ptr3.get()) != 0);
+            ASSERT_FALSE(sub_uint(ptr.get(), 2, ptr2.get(), 1, true, 2, ptr3.get()) != 0);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFE), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[1]);
         }
@@ -333,25 +385,25 @@ namespace SEALTest
 
             ptr[0] = 0ULL;
             ptr[1] = 0ULL;
-            ASSERT_FALSE(add_uint_uint64(ptr.get(), 0ULL, 2, ptr2.get()));
+            ASSERT_FALSE(add_uint(ptr.get(), 2, 0ULL, ptr2.get()));
             ASSERT_EQ(0ULL, ptr2[0]);
             ASSERT_EQ(0ULL, ptr2[1]);
 
             ptr[0] = 0xFFFFFFFF00000000ULL;
             ptr[1] = 0ULL;
-            ASSERT_FALSE(add_uint_uint64(ptr.get(), 0xFFFFFFFFULL, 2, ptr2.get()));
+            ASSERT_FALSE(add_uint(ptr.get(), 2, 0xFFFFFFFFULL, ptr2.get()));
             ASSERT_EQ(0xFFFFFFFFFFFFFFFFULL, ptr2[0]);
             ASSERT_EQ(0ULL, ptr2[1]);
 
             ptr[0] = 0xFFFFFFFF00000000ULL;
             ptr[1] = 0xFFFFFFFF00000000ULL;
-            ASSERT_FALSE(add_uint_uint64(ptr.get(), 0x100000000ULL, 2, ptr2.get()));
+            ASSERT_FALSE(add_uint(ptr.get(), 2, 0x100000000ULL, ptr2.get()));
             ASSERT_EQ(0ULL, ptr2[0]);
             ASSERT_EQ(0xFFFFFFFF00000001ULL, ptr2[1]);
 
             ptr[0] = 0xFFFFFFFFFFFFFFFFULL;
             ptr[1] = 0xFFFFFFFFFFFFFFFFULL;
-            ASSERT_TRUE(add_uint_uint64(ptr.get(), 1ULL, 2, ptr2.get()));
+            ASSERT_TRUE(add_uint(ptr.get(), 2, 1ULL, ptr2.get()));
             ASSERT_EQ(0ULL, ptr2[0]);
             ASSERT_EQ(0ULL, ptr2[1]);
         }
@@ -364,37 +416,37 @@ namespace SEALTest
 
             ptr[0] = 0ULL;
             ptr[1] = 0ULL;
-            ASSERT_FALSE(sub_uint_uint64(ptr.get(), 0ULL, 2, ptr2.get()));
+            ASSERT_FALSE(sub_uint(ptr.get(), 2, 0ULL, ptr2.get()));
             ASSERT_EQ(0ULL, ptr2[0]);
             ASSERT_EQ(0ULL, ptr2[1]);
 
             ptr[0] = 0ULL;
             ptr[1] = 0ULL;
-            ASSERT_TRUE(sub_uint_uint64(ptr.get(), 1ULL, 2, ptr2.get()));
+            ASSERT_TRUE(sub_uint(ptr.get(), 2, 1ULL, ptr2.get()));
             ASSERT_EQ(0xFFFFFFFFFFFFFFFFULL, ptr2[0]);
             ASSERT_EQ(0xFFFFFFFFFFFFFFFFULL, ptr2[1]);
 
             ptr[0] = 1ULL;
             ptr[1] = 0ULL;
-            ASSERT_TRUE(sub_uint_uint64(ptr.get(), 2ULL, 2, ptr2.get()));
+            ASSERT_TRUE(sub_uint(ptr.get(), 2, 2ULL, ptr2.get()));
             ASSERT_EQ(0xFFFFFFFFFFFFFFFFULL, ptr2[0]);
             ASSERT_EQ(0xFFFFFFFFFFFFFFFFULL, ptr2[1]);
 
             ptr[0] = 0xFFFFFFFF00000000ULL;
             ptr[1] = 0ULL;
-            ASSERT_FALSE(sub_uint_uint64(ptr.get(), 0xFFFFFFFFULL, 2, ptr2.get()));
+            ASSERT_FALSE(sub_uint(ptr.get(), 2, 0xFFFFFFFFULL, ptr2.get()));
             ASSERT_EQ(0xFFFFFFFE00000001ULL, ptr2[0]);
             ASSERT_EQ(0ULL, ptr2[1]);
 
             ptr[0] = 0xFFFFFFFF00000000ULL;
             ptr[1] = 0xFFFFFFFF00000000ULL;
-            ASSERT_FALSE(sub_uint_uint64(ptr.get(), 0x100000000ULL, 2, ptr2.get()));
+            ASSERT_FALSE(sub_uint(ptr.get(), 2, 0x100000000ULL, ptr2.get()));
             ASSERT_EQ(0xFFFFFFFE00000000ULL, ptr2[0]);
             ASSERT_EQ(0xFFFFFFFF00000000ULL, ptr2[1]);
 
             ptr[0] = 0xFFFFFFFFFFFFFFFFULL;
             ptr[1] = 0xFFFFFFFFFFFFFFFFULL;
-            ASSERT_FALSE(sub_uint_uint64(ptr.get(), 1ULL, 2, ptr2.get()));
+            ASSERT_FALSE(sub_uint(ptr.get(), 2, 1ULL, ptr2.get()));
             ASSERT_EQ(0xFFFFFFFFFFFFFFFEULL, ptr2[0]);
             ASSERT_EQ(0xFFFFFFFFFFFFFFFFULL, ptr2[1]);
         }
@@ -990,9 +1042,9 @@ namespace SEALTest
             ASSERT_EQ(static_cast<uint64_t>(0x0000FFFF0000FFFF), ptr[1]);
         }
 
-        TEST(UIntArith, AndUIntUInt)
+        TEST(UIntArith, AndUInt)
         {
-            and_uint_uint(nullptr, nullptr, 0, nullptr);
+            and_uint(nullptr, nullptr, 0, nullptr);
 
             MemoryPool &pool = *global_variables::global_memory_pool;
             auto ptr(allocate_uint(2, pool));
@@ -1004,7 +1056,7 @@ namespace SEALTest
             ptr2[1] = 0xFFFFFFFFFFFFFFFF;
             ptr3[0] = 0xFFFFFFFFFFFFFFFF;
             ptr3[1] = 0xFFFFFFFFFFFFFFFF;
-            and_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            and_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[1]);
 
@@ -1014,17 +1066,17 @@ namespace SEALTest
             ptr2[1] = 0xFF00FF00FF00FF00;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            and_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            and_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(static_cast<uint64_t>(0x0000FFFF00000000), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFF000000FF000000), ptr3[1]);
-            and_uint_uint(ptr.get(), ptr2.get(), 2, ptr.get());
+            and_uint(ptr.get(), ptr2.get(), 2, ptr.get());
             ASSERT_EQ(static_cast<uint64_t>(0x0000FFFF00000000), ptr[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFF000000FF000000), ptr[1]);
         }
 
-        TEST(UIntArith, OrUIntUInt)
+        TEST(UIntArith, OrUInt)
         {
-            or_uint_uint(nullptr, nullptr, 0, nullptr);
+            or_uint(nullptr, nullptr, 0, nullptr);
 
             MemoryPool &pool = *global_variables::global_memory_pool;
             auto ptr(allocate_uint(2, pool));
@@ -1036,7 +1088,7 @@ namespace SEALTest
             ptr2[1] = 0xFFFFFFFFFFFFFFFF;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            or_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            or_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
 
@@ -1046,17 +1098,17 @@ namespace SEALTest
             ptr2[1] = 0xFF00FF00FF00FF00;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            or_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            or_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFF0000FFFF), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFF00FFFFFF00), ptr3[1]);
-            or_uint_uint(ptr.get(), ptr2.get(), 2, ptr.get());
+            or_uint(ptr.get(), ptr2.get(), 2, ptr.get());
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFF0000FFFF), ptr[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFF00FFFFFF00), ptr[1]);
         }
 
-        TEST(UIntArith, XorUIntUInt)
+        TEST(UIntArith, XorUInt)
         {
-            xor_uint_uint(nullptr, nullptr, 0, nullptr);
+            xor_uint(nullptr, nullptr, 0, nullptr);
 
             MemoryPool &pool = *global_variables::global_memory_pool;
             auto ptr(allocate_uint(2, pool));
@@ -1068,7 +1120,7 @@ namespace SEALTest
             ptr2[1] = 0xFFFFFFFFFFFFFFFF;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            xor_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            xor_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
 
@@ -1078,10 +1130,10 @@ namespace SEALTest
             ptr2[1] = 0xFF00FF00FF00FF00;
             ptr3[0] = 0;
             ptr3[1] = 0;
-            xor_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            xor_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(static_cast<uint64_t>(0xFFFF00000000FFFF), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0x00FFFF0000FFFF00), ptr3[1]);
-            xor_uint_uint(ptr.get(), ptr2.get(), 2, ptr.get());
+            xor_uint(ptr.get(), ptr2.get(), 2, ptr.get());
             ASSERT_EQ(static_cast<uint64_t>(0xFFFF00000000FFFF), ptr[0]);
             ASSERT_EQ(static_cast<uint64_t>(0x00FFFF0000FFFF00), ptr[1]);
         }
@@ -1180,7 +1232,105 @@ namespace SEALTest
             ASSERT_EQ(334670460471ULL, result);
         }
 
-        TEST(UIntArith, MultiplyUIntUInt)
+        TEST(UIntArith, MultiplyManyUInt64)
+        {
+            MemoryPool &pool = *global_variables::global_memory_pool;
+
+            vector<uint64_t> in = { 0 };
+            vector<uint64_t> out = { 0 };
+            vector<uint64_t> expected = { 0 };
+            multiply_many_uint64(in.data(), 1, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+
+            in = { 1 };
+            out = { 0 };
+            expected = { 1 };
+            multiply_many_uint64(in.data(), 1, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+
+            in = { 0, 0, 0 };
+            out = { 0, 0, 0 };
+            expected = { 0, 0, 0 };
+            multiply_many_uint64(in.data(), 1, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            multiply_many_uint64(in.data(), 2, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            multiply_many_uint64(in.data(), 3, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+
+            in = { 1, 1, 1 };
+            out = { 0, 0, 0 };
+            expected = { 1, 0, 0 };
+            multiply_many_uint64(in.data(), 1, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            multiply_many_uint64(in.data(), 2, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            multiply_many_uint64(in.data(), 3, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+
+            in = { 10, 20, 40 };
+            out = { 0, 0, 0 };
+            expected = { 10, 0, 0 };
+            multiply_many_uint64(in.data(), 1, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            expected = { 200, 0, 0 };
+            multiply_many_uint64(in.data(), 2, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            expected = { 8000, 0, 0 };
+            multiply_many_uint64(in.data(), 3, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+
+            in = { 0xF0F0F0F0F0F0F0, 0xBABABABABABABA, 0xCECECECECECECE };
+            out = { 0, 0, 0 };
+            expected = { 0xade881380d001140, 0xd4d54d49088bd2dd, 0x8df9832af0 };
+            multiply_many_uint64(in.data(), 3, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+        }
+
+        TEST(UIntArith, MultiplyManyUInt64Except)
+        {
+            MemoryPool &pool = *global_variables::global_memory_pool;
+
+            vector<uint64_t> in = { 0, 0, 0 };
+            vector<uint64_t> out = { 0, 0, 0 };
+            vector<uint64_t> expected = { 0, 0, 0 };
+            multiply_many_uint64_except(in.data(), 2, 0, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            multiply_many_uint64_except(in.data(), 2, 1, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            multiply_many_uint64_except(in.data(), 3, 0, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            multiply_many_uint64_except(in.data(), 3, 1, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            multiply_many_uint64_except(in.data(), 3, 2, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+
+            in = { 2, 3, 5 };
+            out = { 0, 0, 0 };
+            expected = { 3, 0, 0 };
+            multiply_many_uint64_except(in.data(), 2, 0, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            expected = { 2, 0, 0 };
+            multiply_many_uint64_except(in.data(), 2, 1, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            expected = { 15, 0, 0 };
+            multiply_many_uint64_except(in.data(), 3, 0, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            expected = { 10, 0, 0 };
+            multiply_many_uint64_except(in.data(), 3, 1, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+            expected = { 6, 0, 0 };
+            multiply_many_uint64_except(in.data(), 3, 2, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+
+            in = { 0xF0F0F0F0F0F0F0, 0xBABABABABABABA, 0xCECECECECECECE };
+            out = { 0, 0, 0 };
+            expected = { 0x0c6a88a6c4e30120, 0xc2a486684a2c, 0x0 };
+            multiply_many_uint64_except(in.data(), 3, 1, out.data(), pool);
+            ASSERT_TRUE(expected == out);
+        }
+
+        TEST(UIntArith, MultiplyUInt)
         {
             MemoryPool &pool = *global_variables::global_memory_pool;
             auto ptr(allocate_uint(2, pool));
@@ -1194,7 +1344,7 @@ namespace SEALTest
             ptr3[1] = 0xFFFFFFFFFFFFFFFF;
             ptr3[2] = 0xFFFFFFFFFFFFFFFF;
             ptr3[3] = 0xFFFFFFFFFFFFFFFF;
-            multiply_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            multiply_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[1]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[2]);
@@ -1208,7 +1358,7 @@ namespace SEALTest
             ptr3[1] = 0xFFFFFFFFFFFFFFFF;
             ptr3[2] = 0xFFFFFFFFFFFFFFFF;
             ptr3[3] = 0xFFFFFFFFFFFFFFFF;
-            multiply_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            multiply_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[1]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[2]);
@@ -1222,7 +1372,7 @@ namespace SEALTest
             ptr3[1] = 0;
             ptr3[2] = 0;
             ptr3[3] = 0;
-            multiply_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            multiply_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[2]);
@@ -1236,7 +1386,7 @@ namespace SEALTest
             ptr3[1] = 0;
             ptr3[2] = 0;
             ptr3[3] = 0;
-            multiply_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            multiply_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[2]);
@@ -1250,7 +1400,7 @@ namespace SEALTest
             ptr3[1] = 0;
             ptr3[2] = 0;
             ptr3[3] = 0;
-            multiply_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            multiply_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(1ULL, ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[1]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFE), ptr3[2]);
@@ -1264,7 +1414,7 @@ namespace SEALTest
             ptr3[1] = 0;
             ptr3[2] = 0;
             ptr3[3] = 0;
-            multiply_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            multiply_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(static_cast<uint64_t>(9585656442714717618ul), ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(1817697005049051848), ptr3[1]);
             ASSERT_EQ(static_cast<uint64_t>(14447416709120365380ul), ptr3[2]);
@@ -1278,7 +1428,7 @@ namespace SEALTest
             ptr3[1] = 0;
             ptr3[2] = 0;
             ptr3[3] = 0;
-            multiply_uint_uint(ptr.get(), 2, ptr2.get(), 1, 2, ptr3.get());
+            multiply_uint(ptr.get(), 2, ptr2.get(), 1, 2, ptr3.get());
             ASSERT_EQ(1ULL, ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[2]);
@@ -1292,7 +1442,7 @@ namespace SEALTest
             ptr3[1] = 0;
             ptr3[2] = 0;
             ptr3[3] = 0;
-            multiply_uint_uint(ptr.get(), 2, ptr2.get(), 1, 3, ptr3.get());
+            multiply_uint(ptr.get(), 2, ptr2.get(), 1, 3, ptr3.get());
             ASSERT_EQ(1ULL, ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFE), ptr3[2]);
@@ -1306,7 +1456,7 @@ namespace SEALTest
             ptr3[1] = 0;
             ptr3[2] = 0;
             ptr3[3] = 0;
-            multiply_truncate_uint_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
+            multiply_truncate_uint(ptr.get(), ptr2.get(), 2, ptr3.get());
             ASSERT_EQ(1ULL, ptr3[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr3[1]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[2]);
@@ -1322,7 +1472,7 @@ namespace SEALTest
             ptr[0] = 0;
             ptr[1] = 0;
             ptr[2] = 0;
-            multiply_uint_uint64(ptr.get(), 3, 0ULL, 4, result.get());
+            multiply_uint(ptr.get(), 3, 0ULL, 4, result.get());
             ASSERT_EQ(0ULL, result[0]);
             ASSERT_EQ(0ULL, result[1]);
             ASSERT_EQ(0ULL, result[2]);
@@ -1331,7 +1481,7 @@ namespace SEALTest
             ptr[0] = 0xFFFFFFFFF;
             ptr[1] = 0xAAAAAAAAA;
             ptr[2] = 0x111111111;
-            multiply_uint_uint64(ptr.get(), 3, 0ULL, 4, result.get());
+            multiply_uint(ptr.get(), 3, 0ULL, 4, result.get());
             ASSERT_EQ(0ULL, result[0]);
             ASSERT_EQ(0ULL, result[1]);
             ASSERT_EQ(0ULL, result[2]);
@@ -1340,7 +1490,7 @@ namespace SEALTest
             ptr[0] = 0xFFFFFFFFF;
             ptr[1] = 0xAAAAAAAAA;
             ptr[2] = 0x111111111;
-            multiply_uint_uint64(ptr.get(), 3, 1ULL, 4, result.get());
+            multiply_uint(ptr.get(), 3, 1ULL, 4, result.get());
             ASSERT_EQ(0xFFFFFFFFFULL, result[0]);
             ASSERT_EQ(0xAAAAAAAAAULL, result[1]);
             ASSERT_EQ(0x111111111ULL, result[2]);
@@ -1349,7 +1499,7 @@ namespace SEALTest
             ptr[0] = 0xFFFFFFFFF;
             ptr[1] = 0xAAAAAAAAA;
             ptr[2] = 0x111111111;
-            multiply_uint_uint64(ptr.get(), 3, 0x10000ULL, 4, result.get());
+            multiply_uint(ptr.get(), 3, 0x10000ULL, 4, result.get());
             ASSERT_EQ(0xFFFFFFFFF0000ULL, result[0]);
             ASSERT_EQ(0xAAAAAAAAA0000ULL, result[1]);
             ASSERT_EQ(0x1111111110000ULL, result[2]);
@@ -1358,7 +1508,7 @@ namespace SEALTest
             ptr[0] = 0xFFFFFFFFF;
             ptr[1] = 0xAAAAAAAAA;
             ptr[2] = 0x111111111;
-            multiply_uint_uint64(ptr.get(), 3, 0x100000000ULL, 4, result.get());
+            multiply_uint(ptr.get(), 3, 0x100000000ULL, 4, result.get());
             ASSERT_EQ(0xFFFFFFFF00000000ULL, result[0]);
             ASSERT_EQ(0xAAAAAAAA0000000FULL, result[1]);
             ASSERT_EQ(0x111111110000000AULL, result[2]);
@@ -1367,18 +1517,18 @@ namespace SEALTest
             ptr[0] = 5656565656565656ULL;
             ptr[1] = 3434343434343434ULL;
             ptr[2] = 1212121212121212ULL;
-            multiply_uint_uint64(ptr.get(), 3, 7878787878787878ULL, 4, result.get());
+            multiply_uint(ptr.get(), 3, 7878787878787878ULL, 4, result.get());
             ASSERT_EQ(8891370032116156560ULL, result[0]);
             ASSERT_EQ(127835914414679452ULL, result[1]);
             ASSERT_EQ(9811042505314082702ULL, result[2]);
             ASSERT_EQ(517709026347ULL, result[3]);
         }
 
-        TEST(UIntArith, DivideUIntUInt)
+        TEST(UIntArith, DivideUInt)
         {
             MemoryPool &pool = *global_variables::global_memory_pool;
-            divide_uint_uint_inplace(nullptr, nullptr, 0, nullptr, pool);
-            divide_uint_uint(nullptr, nullptr, 0, nullptr, nullptr, pool);
+            divide_uint_inplace(nullptr, nullptr, 0, nullptr, pool);
+            divide_uint(nullptr, nullptr, 0, nullptr, nullptr, pool);
 
             auto ptr(allocate_uint(4, pool));
             auto ptr2(allocate_uint(4, pool));
@@ -1390,7 +1540,7 @@ namespace SEALTest
             ptr2[1] = 1;
             ptr3[0] = 0xFFFFFFFFFFFFFFFF;
             ptr3[1] = 0xFFFFFFFFFFFFFFFF;
-            divide_uint_uint_inplace(ptr.get(), ptr2.get(), 2, ptr3.get(), pool);
+            divide_uint_inplace(ptr.get(), ptr2.get(), 2, ptr3.get(), pool);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr[1]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
@@ -1402,7 +1552,7 @@ namespace SEALTest
             ptr2[1] = 0xFFFFFFFFFFFFFFFF;
             ptr3[0] = 0xFFFFFFFFFFFFFFFF;
             ptr3[1] = 0xFFFFFFFFFFFFFFFF;
-            divide_uint_uint_inplace(ptr.get(), ptr2.get(), 2, ptr3.get(), pool);
+            divide_uint_inplace(ptr.get(), ptr2.get(), 2, ptr3.get(), pool);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr[1]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
@@ -1414,7 +1564,7 @@ namespace SEALTest
             ptr2[1] = 0xFFFFFFFFFFFFFFFF;
             ptr3[0] = 0xFFFFFFFFFFFFFFFF;
             ptr3[1] = 0xFFFFFFFFFFFFFFFF;
-            divide_uint_uint_inplace(ptr.get(), ptr2.get(), 2, ptr3.get(), pool);
+            divide_uint_inplace(ptr.get(), ptr2.get(), 2, ptr3.get(), pool);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFE), ptr[0]);
             ASSERT_EQ(static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF), ptr[1]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[0]);
@@ -1426,7 +1576,7 @@ namespace SEALTest
             ptr2[1] = 0xFFFFFFFFFFFFFFFF;
             ptr3[0] = 0xFFFFFFFFFFFFFFFF;
             ptr3[1] = 0xFFFFFFFFFFFFFFFF;
-            divide_uint_uint_inplace(ptr.get(), ptr2.get(), 2, ptr3.get(), pool);
+            divide_uint_inplace(ptr.get(), ptr2.get(), 2, ptr3.get(), pool);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr[1]);
             ASSERT_EQ(1ULL, ptr3[0]);
@@ -1438,7 +1588,7 @@ namespace SEALTest
             ptr2[1] = 0;
             ptr3[0] = 0xFFFFFFFFFFFFFFFF;
             ptr3[1] = 0xFFFFFFFFFFFFFFFF;
-            divide_uint_uint_inplace(ptr.get(), ptr2.get(), 2, ptr3.get(), pool);
+            divide_uint_inplace(ptr.get(), ptr2.get(), 2, ptr3.get(), pool);
             ASSERT_EQ(static_cast<uint64_t>(2), ptr[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr[1]);
             ASSERT_EQ(static_cast<uint64_t>(4), ptr3[0]);
@@ -1460,7 +1610,7 @@ namespace SEALTest
             ptr4[1] = 0xFFFFFFFFFFFFFFFF;
             ptr4[2] = 0xFFFFFFFFFFFFFFFF;
             ptr4[3] = 0xFFFFFFFFFFFFFFFF;
-            divide_uint_uint(ptr.get(), ptr2.get(), 4, ptr3.get(), ptr4.get(), pool);
+            divide_uint(ptr.get(), ptr2.get(), 4, ptr3.get(), ptr4.get(), pool);
             ASSERT_EQ(static_cast<uint64_t>(2), ptr4[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr4[1]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr4[2]);
@@ -1470,7 +1620,7 @@ namespace SEALTest
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[2]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr3[3]);
 
-            divide_uint_uint_inplace(ptr.get(), ptr2.get(), 4, ptr3.get(), pool);
+            divide_uint_inplace(ptr.get(), ptr2.get(), 4, ptr3.get(), pool);
             ASSERT_EQ(static_cast<uint64_t>(2), ptr[0]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr[1]);
             ASSERT_EQ(static_cast<uint64_t>(0), ptr[2]);
@@ -1488,7 +1638,7 @@ namespace SEALTest
 
             input[0] = 0;
             input[1] = 0;
-            divide_uint128_uint64_inplace(input, 1ULL, quotient);
+            divide_uint128_inplace(input, 1ULL, quotient);
             ASSERT_EQ(0ULL, input[0]);
             ASSERT_EQ(0ULL, input[1]);
             ASSERT_EQ(0ULL, quotient[0]);
@@ -1496,7 +1646,7 @@ namespace SEALTest
 
             input[0] = 1;
             input[1] = 0;
-            divide_uint128_uint64_inplace(input, 1ULL, quotient);
+            divide_uint128_inplace(input, 1ULL, quotient);
             ASSERT_EQ(0ULL, input[0]);
             ASSERT_EQ(0ULL, input[1]);
             ASSERT_EQ(1ULL, quotient[0]);
@@ -1504,7 +1654,7 @@ namespace SEALTest
 
             input[0] = 0x10101010;
             input[1] = 0x2B2B2B2B;
-            divide_uint128_uint64_inplace(input, 0x1000ULL, quotient);
+            divide_uint128_inplace(input, 0x1000ULL, quotient);
             ASSERT_EQ(0x10ULL, input[0]);
             ASSERT_EQ(0ULL, input[1]);
             ASSERT_EQ(0xB2B0000000010101ULL, quotient[0]);
@@ -1512,7 +1662,7 @@ namespace SEALTest
 
             input[0] = 1212121212121212ULL;
             input[1] = 3434343434343434ULL;
-            divide_uint128_uint64_inplace(input, 5656565656565656ULL, quotient);
+            divide_uint128_inplace(input, 5656565656565656ULL, quotient);
             ASSERT_EQ(5252525252525252ULL, input[0]);
             ASSERT_EQ(0ULL, input[1]);
             ASSERT_EQ(11199808901895084909ULL, quotient[0]);
@@ -1527,7 +1677,7 @@ namespace SEALTest
             input[0] = 0;
             input[1] = 0;
             input[2] = 0;
-            divide_uint192_uint64_inplace(input, 1ULL, quotient);
+            divide_uint192_inplace(input, 1ULL, quotient);
             ASSERT_EQ(0ULL, input[0]);
             ASSERT_EQ(0ULL, input[1]);
             ASSERT_EQ(0ULL, input[2]);
@@ -1538,7 +1688,7 @@ namespace SEALTest
             input[0] = 1;
             input[1] = 0;
             input[2] = 0;
-            divide_uint192_uint64_inplace(input, 1ULL, quotient);
+            divide_uint192_inplace(input, 1ULL, quotient);
             ASSERT_EQ(0ULL, input[0]);
             ASSERT_EQ(0ULL, input[1]);
             ASSERT_EQ(0ULL, input[2]);
@@ -1549,7 +1699,7 @@ namespace SEALTest
             input[0] = 0x10101010;
             input[1] = 0x2B2B2B2B;
             input[2] = 0xF1F1F1F1;
-            divide_uint192_uint64_inplace(input, 0x1000ULL, quotient);
+            divide_uint192_inplace(input, 0x1000ULL, quotient);
             ASSERT_EQ(0x10ULL, input[0]);
             ASSERT_EQ(0ULL, input[1]);
             ASSERT_EQ(0ULL, input[2]);
@@ -1560,7 +1710,7 @@ namespace SEALTest
             input[0] = 1212121212121212ULL;
             input[1] = 3434343434343434ULL;
             input[2] = 5656565656565656ULL;
-            divide_uint192_uint64_inplace(input, 7878787878787878ULL, quotient);
+            divide_uint192_inplace(input, 7878787878787878ULL, quotient);
             ASSERT_EQ(7272727272727272ULL, input[0]);
             ASSERT_EQ(0ULL, input[1]);
             ASSERT_EQ(0ULL, input[2]);
@@ -1569,86 +1719,17 @@ namespace SEALTest
             ASSERT_EQ(0ULL, quotient[2]);
         }
 
-        TEST(UIntArith, ExponentiateUInt)
-        {
-            MemoryPool &pool = *global_variables::global_memory_pool;
-            auto input(allocate_zero_uint(2, pool));
-            auto result(allocate_zero_uint(8, pool));
-
-            result[0] = 1, result[1] = 2, result[2] = 3, result[3] = 4;
-            result[4] = 5, result[5] = 6, result[6] = 7, result[7] = 8;
-
-            uint64_t exponent[2]{ 0, 0 };
-
-            input[0] = 0xFFF;
-            input[1] = 0;
-            exponentiate_uint(input.get(), 2, exponent, 1, 1, result.get(), pool);
-            ASSERT_EQ(1ULL, result[0]);
-            ASSERT_EQ(2ULL, result[1]);
-
-            exponentiate_uint(input.get(), 2, exponent, 1, 2, result.get(), pool);
-            ASSERT_EQ(1ULL, result[0]);
-            ASSERT_EQ(0ULL, result[1]);
-
-            exponentiate_uint(input.get(), 1, exponent, 1, 4, result.get(), pool);
-            ASSERT_EQ(1ULL, result[0]);
-            ASSERT_EQ(0ULL, result[1]);
-            ASSERT_EQ(0ULL, result[2]);
-            ASSERT_EQ(0ULL, result[3]);
-
-            input[0] = 123;
-            exponent[0] = 5;
-            exponentiate_uint(input.get(), 1, exponent, 2, 2, result.get(), pool);
-            ASSERT_EQ(28153056843ULL, result[0]);
-            ASSERT_EQ(0ULL, result[1]);
-
-            input[0] = 1;
-            exponent[0] = 1;
-            exponent[1] = 1;
-            exponentiate_uint(input.get(), 1, exponent, 2, 2, result.get(), pool);
-            ASSERT_EQ(1ULL, result[0]);
-            ASSERT_EQ(0ULL, result[1]);
-
-            input[0] = 0;
-            input[1] = 1;
-            exponent[0] = 7;
-            exponent[1] = 0;
-            exponentiate_uint(input.get(), 2, exponent, 2, 8, result.get(), pool);
-            ASSERT_EQ(0ULL, result[0]);
-            ASSERT_EQ(0ULL, result[1]);
-            ASSERT_EQ(0ULL, result[2]);
-            ASSERT_EQ(0ULL, result[3]);
-            ASSERT_EQ(0ULL, result[4]);
-            ASSERT_EQ(0ULL, result[5]);
-            ASSERT_EQ(0ULL, result[6]);
-            ASSERT_EQ(1ULL, result[7]);
-
-            input[0] = 121212;
-            input[1] = 343434;
-            exponent[0] = 3;
-            exponent[1] = 0;
-            exponentiate_uint(input.get(), 2, exponent, 2, 8, result.get(), pool);
-            ASSERT_EQ(1780889000200128ULL, result[0]);
-            ASSERT_EQ(15137556501701088ULL, result[1]);
-            ASSERT_EQ(42889743421486416ULL, result[2]);
-            ASSERT_EQ(40506979898070504ULL, result[3]);
-            ASSERT_EQ(0ULL, result[4]);
-            ASSERT_EQ(0ULL, result[5]);
-            ASSERT_EQ(0ULL, result[6]);
-            ASSERT_EQ(0ULL, result[7]);
-        }
-
         TEST(UIntArith, ExponentiateUInt64)
         {
-            ASSERT_EQ(0ULL, exponentiate_uint64(0ULL, 1ULL));
-            ASSERT_EQ(1ULL, exponentiate_uint64(1ULL, 0ULL));
-            ASSERT_EQ(0ULL, exponentiate_uint64(0ULL, 0xFFFFFFFFFFFFFFFFULL));
-            ASSERT_EQ(1ULL, exponentiate_uint64(0xFFFFFFFFFFFFFFFFULL, 0ULL));
-            ASSERT_EQ(25ULL, exponentiate_uint64(5ULL, 2ULL));
-            ASSERT_EQ(32ULL, exponentiate_uint64(2ULL, 5ULL));
-            ASSERT_EQ(0x1000000000000000ULL, exponentiate_uint64(0x10ULL, 15ULL));
-            ASSERT_EQ(0ULL, exponentiate_uint64(0x10ULL, 16ULL));
-            ASSERT_EQ(12389286314587456613ULL, exponentiate_uint64(123456789ULL, 13ULL));
+            ASSERT_EQ(0ULL, exponentiate_uint(0ULL, 1ULL));
+            ASSERT_EQ(1ULL, exponentiate_uint(1ULL, 0ULL));
+            ASSERT_EQ(0ULL, exponentiate_uint(0ULL, 0xFFFFFFFFFFFFFFFFULL));
+            ASSERT_EQ(1ULL, exponentiate_uint(0xFFFFFFFFFFFFFFFFULL, 0ULL));
+            ASSERT_EQ(25ULL, exponentiate_uint(5ULL, 2ULL));
+            ASSERT_EQ(32ULL, exponentiate_uint(2ULL, 5ULL));
+            ASSERT_EQ(0x1000000000000000ULL, exponentiate_uint(0x10ULL, 15ULL));
+            ASSERT_EQ(0ULL, exponentiate_uint(0x10ULL, 16ULL));
+            ASSERT_EQ(12389286314587456613ULL, exponentiate_uint(123456789ULL, 13ULL));
         }
-   }
-}
+    } // namespace util
+} // namespace sealtest

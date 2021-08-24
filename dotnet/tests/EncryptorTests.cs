@@ -5,6 +5,7 @@ using Microsoft.Research.SEAL;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Numerics;
 
 namespace SEALNetTest
@@ -15,22 +16,71 @@ namespace SEALNetTest
         [TestMethod]
         public void EncryptTest()
         {
-            SEALContext context = GlobalContext.BFVContext;
-            KeyGenerator keyGen = new KeyGenerator(context);
-            PublicKey publicKey = keyGen.PublicKey;
-            Encryptor encryptor = new Encryptor(context, publicKey);
+            {
+                SEALContext context = GlobalContext.BFVContext;
+                KeyGenerator keygen = new KeyGenerator(context);
+                keygen.CreatePublicKey(out PublicKey publicKey);
+                SecretKey secretKey = keygen.SecretKey;
+                Encryptor encryptor = new Encryptor(context, publicKey, secretKey);
 
-            Assert.IsNotNull(encryptor);
+                Assert.IsNotNull(encryptor);
 
-            Ciphertext cipher = new Ciphertext();
-            Plaintext plain = new Plaintext("1x^1 + 1");
+                Plaintext plain = new Plaintext("1x^1 + 1");
+                Ciphertext cipher = new Ciphertext();
+                Assert.AreEqual(0ul, cipher.Size);
+                encryptor.Encrypt(plain, cipher);
+                Assert.IsNotNull(cipher);
+                Assert.AreEqual(2ul, cipher.Size);
+            }
+            using (MemoryStream stream = new MemoryStream())
+            {
+                SEALContext context = GlobalContext.BFVContext;
+                KeyGenerator keygen = new KeyGenerator(context);
+                keygen.CreatePublicKey(out PublicKey publicKey);
+                Encryptor encryptor = new Encryptor(context, publicKey);
 
-            Assert.AreEqual(0ul, cipher.Size);
+                Assert.IsNotNull(encryptor);
 
-            encryptor.Encrypt(plain, cipher);
+                Plaintext plain = new Plaintext("1x^1 + 1");
+                encryptor.Encrypt(plain).Save(stream);
+                stream.Seek(0, SeekOrigin.Begin);
+                Ciphertext cipher = new Ciphertext();
+                cipher.Load(context, stream);
+                Assert.IsNotNull(cipher);
+                Assert.AreEqual(2ul, cipher.Size);
+            }
+            {
+                SEALContext context = GlobalContext.BFVContext;
+                KeyGenerator keygen = new KeyGenerator(context);
+                SecretKey secretKey = keygen.SecretKey;
+                Encryptor encryptor = new Encryptor(context, secretKey);
 
-            Assert.IsNotNull(cipher);
-            Assert.AreEqual(2ul, cipher.Size);
+                Assert.IsNotNull(encryptor);
+
+                Plaintext plain = new Plaintext("1x^1 + 1");
+                Ciphertext cipher = new Ciphertext();
+                Assert.AreEqual(0ul, cipher.Size);
+                encryptor.EncryptSymmetric(plain, cipher);
+                Assert.IsNotNull(cipher);
+                Assert.AreEqual(2ul, cipher.Size);
+            }
+            using (MemoryStream stream = new MemoryStream())
+            {
+                SEALContext context = GlobalContext.BFVContext;
+                KeyGenerator keygen = new KeyGenerator(context);
+                SecretKey secretKey = keygen.SecretKey;
+                Encryptor encryptor = new Encryptor(context, secretKey);
+
+                Assert.IsNotNull(encryptor);
+
+                Plaintext plain = new Plaintext("1x^1 + 1");
+                encryptor.EncryptSymmetric(plain).Save(stream);
+                stream.Seek(0, SeekOrigin.Begin);
+                Ciphertext cipher = new Ciphertext();
+                cipher.Load(context, stream);
+                Assert.IsNotNull(cipher);
+                Assert.AreEqual(2ul, cipher.Size);
+            }
         }
 
         [TestMethod]
@@ -38,77 +88,274 @@ namespace SEALNetTest
         {
             {
                 SEALContext context = GlobalContext.BFVContext;
-                KeyGenerator keyGen = new KeyGenerator(context);
-                PublicKey publicKey = keyGen.PublicKey;
-                SecretKey secretKey = keyGen.SecretKey;
-                Encryptor encryptor = new Encryptor(context, publicKey);
-                Decryptor decryptor = new Decryptor(context, secretKey);
+                KeyGenerator keygen = new KeyGenerator(context);
+                keygen.CreatePublicKey(out PublicKey publicKey);
+                SecretKey secretKey = keygen.SecretKey;
 
-                Assert.IsNotNull(encryptor);
+                Decryptor decryptor = new Decryptor(context, secretKey);
                 Assert.IsNotNull(decryptor);
 
                 Ciphertext cipher = new Ciphertext();
-                encryptor.EncryptZero(cipher);
-                Assert.IsFalse(cipher.IsNTTForm);
-                Assert.IsFalse(cipher.IsTransparent);
-                Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
                 Plaintext plain = new Plaintext();
-                decryptor.Decrypt(cipher, plain);
-                Assert.IsTrue(plain.IsZero);
-
                 ParmsId nextParms = context.FirstContextData.NextContextData.ParmsId;
-                encryptor.EncryptZero(nextParms, cipher);
-                Assert.IsFalse(cipher.IsNTTForm);
-                Assert.IsFalse(cipher.IsTransparent);
-                Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
-                Assert.AreEqual(cipher.ParmsId, nextParms);
-                decryptor.Decrypt(cipher, plain);
-                Assert.IsTrue(plain.IsZero);
+
+                {
+                    Encryptor encryptor = new Encryptor(context, publicKey);
+                    Assert.IsNotNull(encryptor);
+
+                    encryptor.EncryptZero(cipher);
+                    Assert.IsFalse(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    decryptor.Decrypt(cipher, plain);
+                    Assert.IsTrue(plain.IsZero);
+
+                    encryptor.EncryptZero(nextParms, cipher);
+                    Assert.IsFalse(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    Assert.AreEqual(cipher.ParmsId, nextParms);
+                    decryptor.Decrypt(cipher, plain);
+                    Assert.IsTrue(plain.IsZero);
+                }
+                {
+                    Encryptor encryptor = new Encryptor(context, secretKey);
+
+                    encryptor.EncryptZeroSymmetric(cipher);
+                    Assert.IsFalse(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    decryptor.Decrypt(cipher, plain);
+                    Assert.IsTrue(plain.IsZero);
+
+                    encryptor.EncryptZeroSymmetric(nextParms, cipher);
+                    Assert.IsFalse(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    Assert.AreEqual(cipher.ParmsId, nextParms);
+                    decryptor.Decrypt(cipher, plain);
+                    Assert.IsTrue(plain.IsZero);
+                }
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    Encryptor encryptor = new Encryptor(context, publicKey);
+
+                    encryptor.EncryptZero().Save(stream);
+                    stream.Seek(0, SeekOrigin.Begin);
+                    cipher.Load(context, stream);
+                    Assert.IsFalse(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    decryptor.Decrypt(cipher, plain);
+                    Assert.IsTrue(plain.IsZero);
+                }
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    Encryptor encryptor = new Encryptor(context, publicKey);
+
+                    encryptor.EncryptZero(nextParms).Save(stream);
+                    stream.Seek(0, SeekOrigin.Begin);
+                    cipher.Load(context, stream);
+                    Assert.IsFalse(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    Assert.AreEqual(cipher.ParmsId, nextParms);
+                    decryptor.Decrypt(cipher, plain);
+                    Assert.IsTrue(plain.IsZero);
+                }
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    Encryptor encryptor = new Encryptor(context, secretKey);
+
+                    encryptor.EncryptZeroSymmetric().Save(stream);
+                    stream.Seek(0, SeekOrigin.Begin);
+                    cipher.Load(context, stream);
+                    Assert.IsFalse(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    decryptor.Decrypt(cipher, plain);
+                    Assert.IsTrue(plain.IsZero);
+                }
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    Encryptor encryptor = new Encryptor(context, secretKey);
+
+                    encryptor.EncryptZeroSymmetric(nextParms).Save(stream);
+                    stream.Seek(0, SeekOrigin.Begin);
+                    cipher.Load(context, stream);
+                    Assert.IsFalse(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    Assert.AreEqual(cipher.ParmsId, nextParms);
+                    decryptor.Decrypt(cipher, plain);
+                    Assert.IsTrue(plain.IsZero);
+                }
             }
             {
                 SEALContext context = GlobalContext.CKKSContext;
-                KeyGenerator keyGen = new KeyGenerator(context);
-                PublicKey publicKey = keyGen.PublicKey;
-                SecretKey secretKey = keyGen.SecretKey;
-                Encryptor encryptor = new Encryptor(context, publicKey);
+                KeyGenerator keygen = new KeyGenerator(context);
+                keygen.CreatePublicKey(out PublicKey publicKey);
+                SecretKey secretKey = keygen.SecretKey;
                 Decryptor decryptor = new Decryptor(context, secretKey);
                 CKKSEncoder encoder = new CKKSEncoder(context);
 
-                Assert.IsNotNull(encryptor);
                 Assert.IsNotNull(decryptor);
 
                 Ciphertext cipher = new Ciphertext();
-                encryptor.EncryptZero(cipher);
-                Assert.IsTrue(cipher.IsNTTForm);
-                Assert.IsFalse(cipher.IsTransparent);
-                Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
-                cipher.Scale = Math.Pow(2.0, 30);
                 Plaintext plain = new Plaintext();
-                decryptor.Decrypt(cipher, plain);
-
-                List<Complex> res = new List<Complex>();
-                encoder.Decode(plain, res);
-                foreach (Complex val in res)
-                {
-                    Assert.AreEqual(val.Real, 0.0, 0.01);
-                    Assert.AreEqual(val.Imaginary, 0.0, 0.01);
-                }
-
                 ParmsId nextParms = context.FirstContextData.NextContextData.ParmsId;
-                encryptor.EncryptZero(nextParms, cipher);
-                Assert.IsTrue(cipher.IsNTTForm);
-                Assert.IsFalse(cipher.IsTransparent);
-                Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
-                cipher.Scale = Math.Pow(2.0, 30);
-                Assert.AreEqual(cipher.ParmsId, nextParms);
-                decryptor.Decrypt(cipher, plain);
-                Assert.AreEqual(plain.ParmsId, nextParms);
+                List<Complex> res = new List<Complex>();
 
-                encoder.Decode(plain, res);
-                foreach (Complex val in res)
                 {
-                    Assert.AreEqual(val.Real, 0.0, 0.01);
-                    Assert.AreEqual(val.Imaginary, 0.0, 0.01);
+                    Encryptor encryptor = new Encryptor(context, publicKey);
+                    Assert.IsNotNull(encryptor);
+
+                    encryptor.EncryptZero(cipher);
+                    Assert.IsTrue(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    cipher.Scale = Math.Pow(2.0, 30);
+                    decryptor.Decrypt(cipher, plain);
+
+                    encoder.Decode(plain, res);
+                    foreach (Complex val in res)
+                    {
+                        Assert.AreEqual(val.Real, 0.0, 0.01);
+                        Assert.AreEqual(val.Imaginary, 0.0, 0.01);
+                    }
+
+                    encryptor.EncryptZero(nextParms, cipher);
+                    Assert.IsTrue(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    cipher.Scale = Math.Pow(2.0, 30);
+                    Assert.AreEqual(cipher.ParmsId, nextParms);
+                    decryptor.Decrypt(cipher, plain);
+                    Assert.AreEqual(plain.ParmsId, nextParms);
+
+                    encoder.Decode(plain, res);
+                    foreach (Complex val in res)
+                    {
+                        Assert.AreEqual(val.Real, 0.0, 0.01);
+                        Assert.AreEqual(val.Imaginary, 0.0, 0.01);
+                    }
+                }
+                {
+                    Encryptor encryptor = new Encryptor(context, secretKey);
+
+                    encryptor.EncryptZeroSymmetric(cipher);
+                    Assert.IsTrue(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    cipher.Scale = Math.Pow(2.0, 30);
+                    decryptor.Decrypt(cipher, plain);
+
+                    encoder.Decode(plain, res);
+                    foreach (Complex val in res)
+                    {
+                        Assert.AreEqual(val.Real, 0.0, 0.01);
+                        Assert.AreEqual(val.Imaginary, 0.0, 0.01);
+                    }
+
+                    encryptor.EncryptZeroSymmetric(nextParms, cipher);
+                    Assert.IsTrue(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    cipher.Scale = Math.Pow(2.0, 30);
+                    Assert.AreEqual(cipher.ParmsId, nextParms);
+                    decryptor.Decrypt(cipher, plain);
+                    Assert.AreEqual(plain.ParmsId, nextParms);
+
+                    encoder.Decode(plain, res);
+                    foreach (Complex val in res)
+                    {
+                        Assert.AreEqual(val.Real, 0.0, 0.01);
+                        Assert.AreEqual(val.Imaginary, 0.0, 0.01);
+                    }
+                }
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    Encryptor encryptor = new Encryptor(context, publicKey);
+
+                    encryptor.EncryptZero().Save(stream);
+                    stream.Seek(0, SeekOrigin.Begin);
+                    cipher.Load(context, stream);
+                    Assert.IsTrue(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    cipher.Scale = Math.Pow(2.0, 30);
+                    decryptor.Decrypt(cipher, plain);
+
+                    encoder.Decode(plain, res);
+                    foreach (Complex val in res)
+                    {
+                        Assert.AreEqual(val.Real, 0.0, 0.01);
+                        Assert.AreEqual(val.Imaginary, 0.0, 0.01);
+                    }
+                }
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    Encryptor encryptor = new Encryptor(context, publicKey);
+
+                    encryptor.EncryptZero(nextParms).Save(stream);
+                    stream.Seek(0, SeekOrigin.Begin);
+                    cipher.Load(context, stream);
+                    Assert.IsTrue(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    cipher.Scale = Math.Pow(2.0, 30);
+                    Assert.AreEqual(cipher.ParmsId, nextParms);
+                    decryptor.Decrypt(cipher, plain);
+                    Assert.AreEqual(plain.ParmsId, nextParms);
+
+                    encoder.Decode(plain, res);
+                    foreach (Complex val in res)
+                    {
+                        Assert.AreEqual(val.Real, 0.0, 0.01);
+                        Assert.AreEqual(val.Imaginary, 0.0, 0.01);
+                    }
+                }
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    Encryptor encryptor = new Encryptor(context, secretKey);
+
+                    encryptor.EncryptZeroSymmetric().Save(stream);
+                    stream.Seek(0, SeekOrigin.Begin);
+                    cipher.Load(context, stream);
+                    Assert.IsTrue(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    cipher.Scale = Math.Pow(2.0, 30);
+                    decryptor.Decrypt(cipher, plain);
+
+                    encoder.Decode(plain, res);
+                    foreach (Complex val in res)
+                    {
+                        Assert.AreEqual(val.Real, 0.0, 0.01);
+                        Assert.AreEqual(val.Imaginary, 0.0, 0.01);
+                    }
+                }
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    Encryptor encryptor = new Encryptor(context, secretKey);
+
+                    encryptor.EncryptZeroSymmetric(nextParms).Save(stream);
+                    stream.Seek(0, SeekOrigin.Begin);
+                    cipher.Load(context, stream);
+                    Assert.IsTrue(cipher.IsNTTForm);
+                    Assert.IsFalse(cipher.IsTransparent);
+                    Assert.AreEqual(cipher.Scale, 1.0, double.Epsilon);
+                    cipher.Scale = Math.Pow(2.0, 30);
+                    Assert.AreEqual(cipher.ParmsId, nextParms);
+                    decryptor.Decrypt(cipher, plain);
+                    Assert.AreEqual(plain.ParmsId, nextParms);
+
+                    encoder.Decode(plain, res);
+                    foreach (Complex val in res)
+                    {
+                        Assert.AreEqual(val.Real, 0.0, 0.01);
+                        Assert.AreEqual(val.Imaginary, 0.0, 0.01);
+                    }
                 }
             }
         }
@@ -118,21 +365,37 @@ namespace SEALNetTest
         {
             SEALContext context = GlobalContext.BFVContext;
             KeyGenerator keygen = new KeyGenerator(context);
-            PublicKey pubKey = keygen.PublicKey;
+            keygen.CreatePublicKey(out PublicKey pubKey);
             PublicKey pubKey_invalid = new PublicKey();
+            SecretKey secKey = keygen.SecretKey;
+            SecretKey secKey_invalid = new SecretKey();
             Encryptor encryptor = new Encryptor(context, pubKey);
             Plaintext plain = new Plaintext();
             Ciphertext cipher = new Ciphertext();
             MemoryPoolHandle pool_invalid = new MemoryPoolHandle();
+            ParmsId parmsId_invalid = new ParmsId();
 
-            Assert.ThrowsException<ArgumentNullException>(() => encryptor = new Encryptor(context, null));
-            Assert.ThrowsException<ArgumentNullException>(() => encryptor = new Encryptor(null, pubKey));
-            Assert.ThrowsException<ArgumentException>(() => encryptor = new Encryptor(context, pubKey_invalid));
+            Utilities.AssertThrows<ArgumentNullException>(() => encryptor = new Encryptor(context, null));
+            Utilities.AssertThrows<ArgumentNullException>(() => encryptor = new Encryptor(null, pubKey));
+            Utilities.AssertThrows<ArgumentException>(() => encryptor = new Encryptor(context, pubKey_invalid));
+            Utilities.AssertThrows<ArgumentException>(() => encryptor = new Encryptor(context, pubKey_invalid, secKey));
+            encryptor = new Encryptor(context, pubKey, secKey);
+            Utilities.AssertThrows<ArgumentException>(() => encryptor.SetPublicKey(pubKey_invalid));
+            Utilities.AssertThrows<ArgumentException>(() => encryptor.SetSecretKey(secKey_invalid));
 
-            Assert.ThrowsException<ArgumentNullException>(() => encryptor.Encrypt(plain, null));
-            Assert.ThrowsException<ArgumentNullException>(() => encryptor.Encrypt(null, cipher));
-            Assert.ThrowsException<ArgumentException>(() => encryptor.Encrypt(plain, cipher, pool_invalid));
-            Assert.ThrowsException<ArgumentException>(() => encryptor.EncryptZero(cipher, pool_invalid));
+            Utilities.AssertThrows<ArgumentNullException>(() => encryptor.Encrypt(null, cipher));
+            Utilities.AssertThrows<ArgumentException>(() => encryptor.Encrypt(plain, cipher, pool_invalid));
+            Utilities.AssertThrows<ArgumentException>(() => encryptor.EncryptZero(cipher, pool_invalid));
+            Utilities.AssertThrows<ArgumentException>(() => encryptor.EncryptZero(parmsId_invalid, cipher));
+
+            Utilities.AssertThrows<ArgumentNullException>(() => encryptor.EncryptSymmetric(plain, destination: null));
+            Utilities.AssertThrows<ArgumentNullException>(() => encryptor.EncryptSymmetric(null, cipher));
+            Utilities.AssertThrows<ArgumentException>(() => encryptor.EncryptSymmetric(plain, cipher, pool_invalid));
+            Utilities.AssertThrows<ArgumentException>(() => encryptor.EncryptZeroSymmetric(cipher, pool_invalid));
+            Utilities.AssertThrows<ArgumentException>(() => encryptor.EncryptZeroSymmetric(parmsId_invalid, cipher));
+
+            Utilities.AssertThrows<ArgumentNullException>(() => encryptor.EncryptSymmetric(plain).Save(null));
+            Utilities.AssertThrows<ArgumentNullException>(() => encryptor.EncryptZeroSymmetric().Save(null));
         }
     }
 }

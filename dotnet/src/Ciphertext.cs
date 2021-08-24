@@ -5,7 +5,6 @@ using Microsoft.Research.SEAL.Tools;
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace Microsoft.Research.SEAL
 {
@@ -16,13 +15,12 @@ namespace Microsoft.Research.SEAL
     /// itself is not meant to be modified directly by the user, but is instead
     /// operated on by functions in the Evaluator class. The size of the backing
     /// array of a ciphertext depends on the encryption parameters and the size
-    /// of the ciphertext (at least 2). If the degree of the PolyModulus
-    /// encryption parameter is N, and the number of primes in the CoeffModulus
-    /// encryption parameter is K, then the ciphertext backing array requires
-    /// precisely 8*N*K*size bytes of memory. A ciphertext also carries with it
-    /// the parmsId of its associated encryption parameters, which is used to
-    /// check the validity of the ciphertext for homomorphic operations and
-    /// decryption.
+    /// of the ciphertext (at least 2). If the PolyModulusDegree encryption
+    /// parameter is N, and the number of primes in the CoeffModulus encryption
+    /// parameter is K, then the ciphertext backing array requires precisely
+    /// 8*N*K*size bytes of memory. A ciphertext also carries with it the
+    /// parmsId of its associated encryption parameters, which is used to check
+    /// the validity of the ciphertext for homomorphic operations and decryption.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -43,14 +41,24 @@ namespace Microsoft.Research.SEAL
     /// </para>
     /// </remarks>
     /// <seealso cref="Plaintext">See Plaintext for the class that stores plaintexts.</seealso>
-    public class Ciphertext : NativeObject
+    public class Ciphertext :
+        NativeObject,
+        ISerializableObject,
+        ISettable<Ciphertext>
     {
+        /// <summary>
+        /// Constructs an empty ciphertext allocating no memory.
+        /// </summary>
+        public Ciphertext() : this(pool: null)
+        {
+        }
+
         /// <summary>
         /// Constructs an empty ciphertext allocating no memory.
         /// </summary>
         /// <param name="pool">The MemoryPoolHandle pointing to a valid memory pool</param>
         /// <exception cref="System.ArgumentException">if pool is uninitialized</exception>
-        public Ciphertext(MemoryPoolHandle pool = null)
+        public Ciphertext(MemoryPoolHandle pool)
         {
             IntPtr poolPtr = pool?.NativePtr ?? IntPtr.Zero;
             NativeMethods.Ciphertext_Create1(poolPtr, out IntPtr ptr);
@@ -65,8 +73,7 @@ namespace Microsoft.Research.SEAL
         /// <param name="context">The SEALContext</param>
         /// <param name="pool">The MemoryPoolHandle pointing to a valid memory pool</param>
         /// <exception cref="ArgumentNullException">if context is null</exception>
-        /// <exception cref="ArgumentException">if the context is not set or encryption
-        /// parameters are not valid</exception>
+        /// <exception cref="ArgumentException">if the encryption parameters are not valid</exception>
         /// <exception cref="ArgumentException">if pool is uninitialized</exception>
         public Ciphertext(SEALContext context, MemoryPoolHandle pool = null)
         {
@@ -88,8 +95,7 @@ namespace Microsoft.Research.SEAL
         /// parameters to be used</param>
         /// <param name="pool">The MemoryPoolHandle pointing to a valid memory pool</param>
         /// <exception cref="ArgumentNullException">if either context or parmsId are null</exception>
-        /// <exception cref="ArgumentException">if the context is not set or encryption
-        /// parameters are not valid</exception>
+        /// <exception cref="ArgumentException">if the encryption parameters are not valid</exception>
         /// <exception cref="ArgumentException">if parmsId is not valid for the encryption
         /// parameters</exception>
         /// <exception cref="ArgumentException">if pool is uninitialized</exception>
@@ -116,8 +122,7 @@ namespace Microsoft.Research.SEAL
         /// <param name="sizeCapacity">The capacity</param>
         /// <param name="pool">The MemoryPoolHandle pointing to a valid memory pool</param>
         /// <exception cref="ArgumentNullException">if either context or parmsId are null</exception>
-        /// <exception cref="ArgumentException">if the context is not set or encryption
-        /// parameters are not valid</exception>
+        /// <exception cref="ArgumentException">if the encryption parameters are not valid</exception>
         /// <exception cref="ArgumentException">if parmsId is not valid for the encryption
         /// parameters</exception>
         /// <exception cref="ArgumentException">if sizeCapacity is less than 2 or too large</exception>
@@ -186,8 +191,7 @@ namespace Microsoft.Research.SEAL
         /// parameters to be used</param>
         /// <param name="sizeCapacity">The capacity</param>
         /// <exception cref="ArgumentNullException">if either context or parmsId are null</exception>
-        /// <exception cref="ArgumentException">if the context is not set or encryption
-        /// parameters are not valid</exception>
+        /// <exception cref="ArgumentException">if the encryption parameters are not valid</exception>
         /// <exception cref="ArgumentException">if parmsId is not valid for the encryption
         /// parameters</exception>
         /// <exception cref="ArgumentException">if sizeCapacity is less than 2 or too large</exception>
@@ -210,8 +214,7 @@ namespace Microsoft.Research.SEAL
         /// <param name="context">The SEALContext</param>
         /// <param name="sizeCapacity">The capacity</param>
         /// <exception cref="ArgumentNullException">if context is null</exception>
-        /// <exception cref="ArgumentException">if the context is not set or encryption
-        /// parameters are not valid</exception>
+        /// <exception cref="ArgumentException">if the encryption parameters are not valid</exception>
         /// <exception cref="ArgumentException">if sizeCapacity is less than 2 or too large</exception>
         public void Reserve(SEALContext context, ulong sizeCapacity)
         {
@@ -248,8 +251,7 @@ namespace Microsoft.Research.SEAL
         /// parameters to be used</param>
         /// <param name="size">The new size</param>
         /// <exception cref="ArgumentNullException">if either context or parmsId are null</exception>
-        /// <exception cref="ArgumentException">if the context is not set or encryption
-        /// parameters are not valid</exception>
+        /// <exception cref="ArgumentException">if the encryption parameters are not valid</exception>
         /// <exception cref="ArgumentException">if parmsId is not valid for the encryption
         /// parameters</exception>
         /// <exception cref="ArgumentException">if size is less than 2 or too large</exception>
@@ -277,8 +279,7 @@ namespace Microsoft.Research.SEAL
         /// <param name="context">The SEALContext</param>
         /// <param name="size">The new size</param>
         /// <exception cref="ArgumentNullException">if context is null</exception>
-        /// <exception cref="ArgumentException">if the context is not set or encryption
-        /// parameters are not valid</exception>
+        /// <exception cref="ArgumentException">if the encryption parameters are not valid</exception>
         /// <exception cref="ArgumentException">if size is less than 2 or too large</exception>
         public void Resize(SEALContext context, ulong size)
         {
@@ -330,7 +331,6 @@ namespace Microsoft.Research.SEAL
         /// <summary>
         /// Copies a given ciphertext to the current one.
         /// </summary>
-        ///
         /// <param name="assign">The ciphertext to copy from</param>
         /// <exception cref="ArgumentNullException">if assign is null</exception>
         public void Set(Ciphertext assign)
@@ -417,11 +417,11 @@ namespace Microsoft.Research.SEAL
         /// associated encryption parameters. This directly affects the
         /// allocation size of the ciphertext.
         /// </summary>
-        public ulong CoeffModCount
+        public ulong CoeffModulusSize
         {
             get
             {
-                NativeMethods.Ciphertext_CoeffModCount(NativePtr, out ulong coeffModCount);
+                NativeMethods.Ciphertext_CoeffModulusSize(NativePtr, out ulong coeffModCount);
                 return coeffModCount;
             }
         }
@@ -468,30 +468,6 @@ namespace Microsoft.Research.SEAL
         }
 
         /// <summary>
-        /// Returns the total size of the current allocation in 64-bit words.
-        /// </summary>
-        public ulong UInt64CountCapacity
-        {
-            get
-            {
-                NativeMethods.Ciphertext_UInt64CountCapacity(NativePtr, out ulong capacity);
-                return capacity;
-            }
-        }
-
-        /// <summary>
-        /// Returns the total size of the current ciphertext in 64-bit words.
-        /// </summary>
-        public ulong UInt64Count
-        {
-            get
-            {
-                NativeMethods.Ciphertext_UInt64Count(NativePtr, out ulong uint64Count);
-                return uint64Count;
-            }
-        }
-
-        /// <summary>
         /// Check whether the current ciphertext is transparent, i.e. does not require
         /// a secret key to decrypt. In typical security models such transparent
         /// ciphertexts would not be considered to be valid. Starting from the second
@@ -508,112 +484,115 @@ namespace Microsoft.Research.SEAL
         }
 
         /// <summary>
-        /// Saves the ciphertext to an output stream. The output is in binary
-        /// format and not human-readable. The output stream must have the
-        /// "binary" flag set.
+        /// Returns an upper bound on the size of the ciphertext, as if it was written
+        /// to an output stream.
         /// </summary>
-        /// <param name="stream">The stream to save the ciphertext to</param>
-        /// <exception cref="ArgumentNullException">if stream is null</exception>
-        /// <exception cref="ArgumentException">if the ciphertext could not be written to stream</exception>
-        public void Save(Stream stream)
+        /// <param name="comprMode">The compression mode</param>
+        /// <exception cref="ArgumentException">if the compression mode is not
+        /// supported</exception>
+        /// <exception cref="InvalidOperationException">if the size does not fit in
+        /// the return type</exception>
+        public long SaveSize(ComprModeType? comprMode = null)
         {
-            if (null == stream)
-                throw new ArgumentNullException(nameof(stream));
+            comprMode = comprMode ?? Serialization.ComprModeDefault;
+            if (!Serialization.IsSupportedComprMode(comprMode.Value))
+                throw new ArgumentException("Unsupported compression mode");
 
-            try
-            {
-                using (BinaryWriter writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
-                {
-                    ParmsId.Save(writer.BaseStream);
-                    writer.Write(IsNTTForm);
-                    writer.Write(Size);
-                    writer.Write(PolyModulusDegree);
-                    writer.Write(CoeffModCount);
-
-                    ulong ulongCount = checked(Size * PolyModulusDegree * CoeffModCount);
-                    for (ulong i = 0; i < ulongCount; i++)
-                    {
-                        writer.Write(this[i]);
-                    }
-                }
-            }
-            catch (IOException ex)
-            {
-                throw new ArgumentException("Could not write Ciphertext", ex);
-            }
+            ComprModeType comprModeValue = comprMode.Value;
+            NativeMethods.Ciphertext_SaveSize(
+                NativePtr, (byte)comprModeValue, out long outBytes);
+            return outBytes;
         }
 
-        /// <summary>
+        /// <summary>Saves the ciphertext to an output stream.</summary>
+        /// <remarks>
+        /// Saves the ciphertext to an output stream. The output is in binary format
+        /// and not human-readable.
+        /// </remarks>
+        /// <param name="stream">The stream to save the ciphertext to</param>
+        /// <param name="comprMode">The desired compression mode</param>
+        /// <exception cref="ArgumentNullException">if stream is null</exception>
+        /// <exception cref="ArgumentException">if the stream is closed or does not
+        /// support writing, or if compression mode is not supported</exception>
+        /// <exception cref="IOException">if I/O operations failed</exception>
+        /// <exception cref="InvalidOperationException">if the data to be saved
+        /// is invalid, or if compression failed</exception>
+        public long Save(Stream stream, ComprModeType? comprMode = null)
+        {
+            comprMode = comprMode ?? Serialization.ComprModeDefault;
+            if (!Serialization.IsSupportedComprMode(comprMode.Value))
+                throw new ArgumentException("Unsupported compression mode");
+
+            ComprModeType comprModeValue = comprMode.Value;
+            return Serialization.Save(
+                (byte[] outptr, ulong size, byte cm, out long outBytes) =>
+                    NativeMethods.Ciphertext_Save(NativePtr, outptr, size,
+                    cm, out outBytes),
+                SaveSize(comprModeValue), comprModeValue, stream);
+        }
+
+        /// <summary>Loads a ciphertext from an input stream overwriting the current
+        /// ciphertext.</summary>
+        /// <remarks>
         /// Loads a ciphertext from an input stream overwriting the current ciphertext.
         /// No checking of the validity of the ciphertext data against encryption
         /// parameters is performed. This function should not be used unless the
         /// ciphertext comes from a fully trusted source.
-        /// </summary>
-        /// <param name="stream">The stream to load the ciphertext from</param>
-        /// <exception cref="ArgumentNullException">if stream is null</exception>
-        /// <exception cref="ArgumentException">if a ciphertext could not be read from
-        /// stream</exception>
-        public void UnsafeLoad(Stream stream)
-        {
-            if (null == stream)
-                throw new ArgumentNullException(nameof(stream));
-
-            try
-            {
-                using (BinaryReader reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true))
-                {
-                    ParmsId parms = new ParmsId();
-                    parms.Load(reader.BaseStream);
-                    ParmsId = parms;
-
-                    bool isNTT = reader.ReadBoolean();
-                    ulong size = reader.ReadUInt64();
-                    ulong polyModulusDegree = reader.ReadUInt64();
-                    ulong coeffModCount = reader.ReadUInt64();
-                    ulong ulongCount = checked(size * polyModulusDegree * coeffModCount);
-
-                    IsNTTForm = isNTT;
-                    Resize(size, polyModulusDegree, coeffModCount);
-                    for (ulong i = 0; i < ulongCount; i++)
-                    {
-                        this[i] = reader.ReadUInt64();
-                    }
-                }
-            }
-            catch (EndOfStreamException ex)
-            {
-                throw new ArgumentException("Stream ended unexpectedly", ex);
-            }
-            catch (IOException ex)
-            {
-                throw new ArgumentException("Could not load Ciphertext", ex);
-            }
-        }
-
-
-        /// <summary>
-        /// Loads a ciphertext from an input stream overwriting the current ciphertext.
-        /// The loaded ciphertext is verified to be valid for the given SEALContext.
-        /// </summary>
+        /// </remarks>
         /// <param name="context">The SEALContext</param>
         /// <param name="stream">The stream to load the ciphertext from</param>
-        /// <exception cref="ArgumentNullException">if stream is null</exception>
-        /// <exception cref="ArgumentException">if the context is not set or encryption
-        /// parameters are not valid</exception>
-        /// <exception cref="ArgumentException">if a ciphertext could not be read from
-        /// stream or is invalid for the context</exception>
-        public void Load(SEALContext context, Stream stream)
+        /// <exception cref="ArgumentNullException">if context or stream is
+        /// null</exception>
+        /// <exception cref="ArgumentException">if the stream is closed or does not
+        /// support reading</exception>
+        /// <exception cref="ArgumentException">if the encryption parameters are not valid</exception>
+        /// <exception cref="EndOfStreamException">if the stream ended
+        /// unexpectedly</exception>
+        /// <exception cref="IOException">if I/O operations failed</exception>
+        /// <exception cref="InvalidOperationException">if the data cannot be loaded
+        /// by this version of Microsoft SEAL, if the loaded data is invalid, or if the
+        /// loaded compression mode is not supported</exception>
+        public long UnsafeLoad(SEALContext context, Stream stream)
         {
             if (null == context)
                 throw new ArgumentNullException(nameof(context));
-            if (null == stream)
-                throw new ArgumentNullException(nameof(stream));
 
-            UnsafeLoad(stream);
-            if (!ValCheck.IsValidFor(this, context))
-            {
-                throw new ArgumentException("Ciphertext data is invalid for the SEALContext");
-            }
+            return Serialization.Load(
+                (byte[] outptr, ulong size, out long outBytes) =>
+                    NativeMethods.Ciphertext_UnsafeLoad(NativePtr, context.NativePtr,
+                    outptr, size, out outBytes),
+                stream);
+        }
+
+        /// <summary>Loads a ciphertext from an input stream overwriting the current
+        /// ciphertext.</summary>
+        /// <remarks>
+        /// Loads a ciphertext from an input stream overwriting the current ciphertext.
+        /// The loaded ciphertext is verified to be valid for the given SEALContext.
+        /// </remarks>
+        /// <param name="context">The SEALContext</param>
+        /// <param name="stream">The stream to load the ciphertext from</param>
+        /// <exception cref="ArgumentNullException">if context or stream is
+        /// null</exception>
+        /// <exception cref="ArgumentException">if the stream is closed or does not
+        /// support reading</exception>
+        /// <exception cref="ArgumentException">if the encryption parameters are not valid</exception>
+        /// <exception cref="EndOfStreamException">if the stream ended
+        /// unexpectedly</exception>
+        /// <exception cref="IOException">if I/O operations failed</exception>
+        /// <exception cref="InvalidOperationException">if the data cannot be loaded
+        /// by this version of Microsoft SEAL, if the loaded data is invalid, or if the
+        /// loaded compression mode is not supported</exception>
+        public long Load(SEALContext context, Stream stream)
+        {
+            if (null == context)
+                throw new ArgumentNullException(nameof(context));
+
+            return Serialization.Load(
+                (byte[] outptr, ulong size, out long outBytes) =>
+                    NativeMethods.Ciphertext_Load(NativePtr, context.NativePtr,
+                    outptr, size, out outBytes),
+                stream);
         }
 
         /// <summary>
@@ -636,7 +615,6 @@ namespace Microsoft.Research.SEAL
         /// <summary>
         /// Returns a copy of ParmsId.
         /// </summary>
-        /// <seealso cref="EncryptionParameters">See EncryptionParameters for more information about parmsId.</seealso>
         public ParmsId ParmsId
         {
             get

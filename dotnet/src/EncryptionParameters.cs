@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace Microsoft.Research.SEAL
 {
@@ -16,6 +15,11 @@ namespace Microsoft.Research.SEAL
     /// </summary>
     public enum SchemeType : byte
     {
+        /// <summary>
+        /// No scheme set; cannot be used for encryption
+        /// </summary>
+        None = 0x0,
+
         /// <summary>
         /// Brakerski/Fan-Vercauteren scheme
         /// </summary>
@@ -49,8 +53,8 @@ namespace Microsoft.Research.SEAL
     /// PlainModulus and too small CoeffModulus).
     /// </para>
     /// <para>
-    /// The EncryptionParameters class maintains at all times a 256-bit SHA-3 hash of
-    /// the currently set encryption parameters called the ParmsId. This hash acts as
+    /// The EncryptionParameters class maintains at all times a 256-bit hash of the
+    /// currently set encryption parameters called the ParmsId. This hash acts as
     /// a unique identifier of the encryption parameters and is used by all further
     /// objects created for these encryption parameters. The ParmsId is not intended
     /// to be directly modified by the user but is used internally for pre-computation
@@ -75,32 +79,21 @@ namespace Microsoft.Research.SEAL
     public class EncryptionParameters : NativeObject, IEquatable<EncryptionParameters>
     {
         /// <summary>
-        /// Creates an empty encryption parameters.
+        /// Creates an empty set of encryption parameters.
         /// </summary>
         ///
-        /// <remarks>
-        /// Creates an empty encryption parameters. At a minimum, the user needs to specify
-        /// the parameters <see cref="PolyModulusDegree"/>, <see cref="CoeffModulus"/>, and
-        /// <see cref="PlainModulus"/> for the parameters to be valid.
-        /// </remarks>
         /// <param name="scheme">Scheme for the encryption parameters</param>
-        public EncryptionParameters(SchemeType scheme)
+        public EncryptionParameters(SchemeType scheme = SchemeType.None)
         {
             NativeMethods.EncParams_Create((byte)scheme, out IntPtr ptr);
             NativePtr = ptr;
         }
 
         /// <summary>
-        /// Creates an empty encryption parameters.
+        /// Creates an empty set of encryption parameters.
         /// </summary>
-        ///
-        /// <remarks>
-        /// Creates an empty encryption parameters. At a minimum, the user needs to specify
-        /// the parameters <see cref="PolyModulusDegree"/>, <see cref="CoeffModulus"/>, and
-        /// <see cref="PlainModulus"/> for the parameters to be valid.
-        /// </remarks>
         /// <param name="scheme">Scheme for the encryption parameters</param>
-        /// <exception cref="System.ArgumentException">if scheme is not supported</exception>
+        /// <exception cref="ArgumentException">if scheme is not supported</exception>
         public EncryptionParameters(byte scheme)
         {
             NativeMethods.EncParams_Create(scheme, out IntPtr ptr);
@@ -110,7 +103,6 @@ namespace Microsoft.Research.SEAL
         /// <summary>
         /// Creates a copy of a given instance of EncryptionParameters.
         /// </summary>
-        ///
         /// <param name="copy">The EncryptionParameters to copy from</param>
         /// <exception cref="ArgumentNullException">if copy is null</exception>
         public EncryptionParameters(EncryptionParameters copy)
@@ -137,7 +129,6 @@ namespace Microsoft.Research.SEAL
         /// Overwrites the EncryptionParameters instance with a copy of a given
         /// instance.
         /// </summary>
-        ///
         /// <param name="assign">The EncryptionParameters to copy from</param>
         /// <exception cref="ArgumentNullException">if assign is null</exception>
         public void Set(EncryptionParameters assign)
@@ -179,16 +170,16 @@ namespace Microsoft.Research.SEAL
         /// <remarks>
         /// When setting:
         ///     Sets the coefficient modulus parameter. The coefficient modulus consists of a list
-        ///     of distinct prime numbers, and is represented by a list of <see cref="SmallModulus" />
+        ///     of distinct prime numbers, and is represented by a list of <see cref="Modulus" />
         ///     objects. The coefficient modulus directly affects the size of ciphertext elements,
         ///     the amount of computation that the scheme can perform (bigger is better), and the
         ///     security level (bigger is worse). In Microsoft SEAL each of the prime numbers in
         ///     the coefficient modulus must be at most 60 bits, and must be congruent to 1 modulo
-        ///     2*degree(PolyModulus).
+        ///     2*PolyModulusDegree.
         /// </remarks>
         /// <exception cref="ArgumentNullException">if the value being set is null</exception>
         /// <exception cref="ArgumentException">if the value being set is invalid</exception>
-        public IEnumerable<SmallModulus> CoeffModulus
+        public IEnumerable<Modulus> CoeffModulus
         {
             get
             {
@@ -198,10 +189,10 @@ namespace Microsoft.Research.SEAL
                 IntPtr[] coeffArray = new IntPtr[length];
                 NativeMethods.EncParams_GetCoeffModulus(NativePtr, ref length, coeffArray);
 
-                List<SmallModulus> result = new List<SmallModulus>(checked((int)length));
+                List<Modulus> result = new List<Modulus>(checked((int)length));
                 foreach(IntPtr sm in coeffArray)
                 {
-                    result.Add(new SmallModulus(sm));
+                    result.Add(new Modulus(sm));
                 }
 
                 return result;
@@ -224,7 +215,7 @@ namespace Microsoft.Research.SEAL
         /// <remarks>
         /// When setting:
         ///     Sets the plaintext modulus parameter. The plaintext modulus is an integer modulus
-        ///     represented by the <see cref="SmallModulus" /> class. The plaintext modulus determines
+        ///     represented by the <see cref="Modulus" /> class. The plaintext modulus determines
         ///     the largest coefficient that plaintext polynomials can represent. It also affects the
         ///     amount of computation that the scheme can perform (bigger is worse). In Microsoft SEAL
         ///     the plaintext modulus can be at most 60 bits long, but can otherwise be any integer.
@@ -233,26 +224,20 @@ namespace Microsoft.Research.SEAL
         /// </remarks>
         /// <exception cref="ArgumentNullException">if the value being set is null</exception>
         /// <exception cref="InvalidOperationException">if scheme is not SchemeType.BFV</exception>
-        public SmallModulus PlainModulus
+        public Modulus PlainModulus
         {
             get
             {
                 NativeMethods.EncParams_GetPlainModulus(NativePtr, out IntPtr ptr);
-                SmallModulus sm = new SmallModulus(ptr, owned: false);
+                Modulus sm = new Modulus(ptr, owned: false);
                 return sm;
             }
             set
             {
-                try
-                {
-                    NativeMethods.EncParams_SetPlainModulus(NativePtr, value.NativePtr);
-                }
-                catch (COMException ex)
-                {
-                    if ((uint)ex.HResult == NativeMethods.Errors.HRInvalidOperation)
-                        throw new InvalidOperationException("Scheme is not SchemeType.BFV", ex);
-                    throw;
-                }
+                if (null == value)
+                    throw new ArgumentNullException(nameof(value));
+
+                NativeMethods.EncParams_SetPlainModulus(NativePtr, value.NativePtr);
             }
         }
 
@@ -261,8 +246,8 @@ namespace Microsoft.Research.SEAL
         /// </summary>
         /// <remarks>
         /// Sets the plaintext modulus parameter. The plaintext modulus is an integer modulus
-        /// represented by the <see cref="SmallModulus" /> class. This method instead takes
-        /// a UInt64 and automatically creates the SmallModulus object. The plaintext modulus
+        /// represented by the <see cref="Modulus" /> class. This method instead takes
+        /// a ulong and automatically creates the Modulus object. The plaintext modulus
         /// determines the largest coefficient that plaintext polynomials can represent. It also
         /// affects the amount of computation that the scheme can perform (bigger is worse). In
         /// Microsoft SEAL the plaintext modulus can be at most 60 bits long, but can otherwise
@@ -273,16 +258,7 @@ namespace Microsoft.Research.SEAL
         /// <exception cref="InvalidOperationException">if scheme is not CKKS</exception>
         public void SetPlainModulus(ulong plainModulus)
         {
-            try
-            {
-                NativeMethods.EncParams_SetPlainModulus(NativePtr, plainModulus);
-            }
-            catch (COMException ex)
-            {
-                if ((uint)ex.HResult == NativeMethods.Errors.HRInvalidOperation)
-                    throw new InvalidOperationException("Scheme is not SchemeType.BFV", ex);
-                throw;
-            }
+            NativeMethods.EncParams_SetPlainModulus(NativePtr, plainModulus);
         }
 
         /// <summary>
@@ -297,103 +273,75 @@ namespace Microsoft.Research.SEAL
             }
         }
 
-        /// <summary>Saves the EncryptionParameters to an output stream.</summary>
-        ///
-        /// <remarks>
-        /// Saves the EncryptionParameters to an output stream. The output is in binary format
-        /// and is not human-readable. The output stream must have the "Binary" flag set.
-        /// </remarks>
-        /// <param name="parms">Encryption Parameters to save</param>
-        /// <param name="stream">The stream to save the EncryptionParameters to</param>
-        /// <exception cref="ArgumentNullException">if either parms or stream are null</exception>
-        /// <exception cref="ArgumentException">if the EncryptionParameters could not be written to stream</exception>
-        public static void Save(EncryptionParameters parms, Stream stream)
+        /// <summary>
+        /// Returns an upper bound on the size of the EncryptionParameters, as if
+        /// it was written to an output stream.
+        /// </summary>
+        /// <param name="comprMode">The compression mode</param>
+        /// <exception cref="ArgumentException">if the compression mode is not
+        /// supported</exception>
+        /// <exception cref="InvalidOperationException">if the size does not fit in
+        /// the return type</exception>
+        public long SaveSize(ComprModeType? comprMode = null)
         {
-            if (null == parms)
-                throw new ArgumentNullException(nameof(parms));
-            if (null == stream)
-                throw new ArgumentNullException(nameof(stream));
+            comprMode = comprMode ?? Serialization.ComprModeDefault;
+            if (!Serialization.IsSupportedComprMode(comprMode.Value))
+                throw new ArgumentException("Unsupported compression mode");
 
-            try
-            {
-                using (BinaryWriter writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
-                {
-                    writer.Write((byte)parms.Scheme);
-                    writer.Write(parms.PolyModulusDegree);
+            ComprModeType comprModeValue = comprMode.Value;
+            NativeMethods.EncParams_SaveSize(
+                NativePtr, (byte)comprModeValue, out long outBytes);
+            return outBytes;
+        }
 
-                    List<SmallModulus> coeffModulus = new List<SmallModulus>(parms.CoeffModulus);
-                    writer.Write(coeffModulus.Count);
-                    foreach (SmallModulus mod in coeffModulus)
-                    {
-                        mod.Save(writer.BaseStream);
-                    }
+        /// <summary>Saves the EncryptionParameters to an output stream.</summary>
+        /// <remarks>
+        /// Saves the EncryptionParameters to an output stream. The output is in
+        /// binary format and not human-readable.
+        /// </remarks>
+        /// <param name="stream">The stream to save the EncryptionParameters to</param>
+        /// <param name="comprMode">The desired compression mode</param>
+        /// <exception cref="ArgumentNullException">if stream is null</exception>
+        /// <exception cref="ArgumentException">if the stream is closed or does not
+        /// support writing, or if compression mode is not supported</exception>
+        /// <exception cref="IOException">if I/O operations failed</exception>
+        /// <exception cref="InvalidOperationException">if the data to be saved
+        /// is invalid, or if compression failed</exception>
+        public long Save(Stream stream, ComprModeType? comprMode = null)
+        {
+            comprMode = comprMode ?? Serialization.ComprModeDefault;
+            if (!Serialization.IsSupportedComprMode(comprMode.Value))
+                throw new ArgumentException("Unsupported compression mode");
 
-                    if (parms.Scheme == SchemeType.BFV)
-                    {
-                        parms.PlainModulus.Save(writer.BaseStream);
-                    }
-                }
-            }
-            catch (IOException ex)
-            {
-                throw new ArgumentException("Could not write EncryptionParameters", ex);
-            }
+            ComprModeType comprModeValue = comprMode.Value;
+            return Serialization.Save(
+                (byte[] outptr, ulong size, byte cm, out long outBytes) =>
+                    NativeMethods.EncParams_Save(NativePtr, outptr, size,
+                    cm, out outBytes),
+                SaveSize(comprModeValue), comprModeValue, stream);
         }
 
         /// <summary>
-        /// Loads the EncryptionParameters from an input stream overwriting the current
-        /// EncryptionParameters.
+        /// Loads an EncryptionParameters from an input stream overwriting the
+        /// current EncryptionParameters.
         /// </summary>
-        ///
         /// <param name="stream">The stream to load the EncryptionParameters from</param>
         /// <exception cref="ArgumentNullException">if stream is null</exception>
-        /// <exception cref="ArgumentException">if valid EncryptionParameters could not be
-        /// read from stream</exception>
-        public static EncryptionParameters Load(Stream stream)
+        /// <exception cref="ArgumentException">if the stream is closed or does not
+        /// support reading</exception>
+        /// <exception cref="EndOfStreamException">if the stream ended
+        /// unexpectedly</exception>
+        /// <exception cref="IOException">if I/O operations failed</exception>
+        /// <exception cref="InvalidOperationException">if the data cannot be loaded
+        /// by this version of Microsoft SEAL, if the loaded data is invalid, or if the
+        /// loaded compression mode is not supported</exception>
+        public long Load(Stream stream)
         {
-            if (null == stream)
-                throw new ArgumentNullException(nameof(stream));
-
-            try
-            {
-                EncryptionParameters parms = null;
-
-                using (BinaryReader reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true))
-                {
-                    byte scheme = reader.ReadByte();
-                    parms = new EncryptionParameters(scheme);
-
-                    parms.PolyModulusDegree = reader.ReadUInt64();
-                    int coeffModulusCount = reader.ReadInt32();
-
-                    List<SmallModulus> coeffModulus = new List<SmallModulus>(coeffModulusCount);
-                    for (int i = 0; i < coeffModulusCount; i++)
-                    {
-                        SmallModulus sm = new SmallModulus();
-                        sm.Load(reader.BaseStream);
-                        coeffModulus.Add(sm);
-                    }
-
-                    parms.CoeffModulus = coeffModulus;
-
-                    if (parms.Scheme == SchemeType.BFV)
-                    {
-                        SmallModulus plainModulus = new SmallModulus();
-                        plainModulus.Load(reader.BaseStream);
-                        parms.PlainModulus = plainModulus;
-                    }
-                }
-
-                return parms;
-            }
-            catch (EndOfStreamException ex)
-            {
-                throw new ArgumentException("End of stream reached", ex);
-            }
-            catch (IOException ex)
-            {
-                throw new ArgumentException("Could not load EncryptionParameters", ex);
-            }
+            return Serialization.Load(
+                (byte[] outptr, ulong size, out long outBytes) =>
+                    NativeMethods.EncParams_Load(NativePtr, outptr, size,
+                    out outBytes),
+                stream);
         }
 
         /// <summary>

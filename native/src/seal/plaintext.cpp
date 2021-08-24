@@ -86,9 +86,9 @@ namespace seal
             }
             return 3;
         }
-    }
+    } // namespace
 
-    Plaintext &Plaintext::operator =(const string &hex_poly)
+    Plaintext &Plaintext::operator=(const string &hex_poly)
     {
         if (is_ntt_form())
         {
@@ -105,8 +105,7 @@ namespace seal
 
         int assign_coeff_bit_count = 0;
         int pos = 0;
-        int last_power = safe_cast<int>(
-            min(data_.max_size(), safe_cast<size_t>(numeric_limits<int>::max())));
+        int last_power = safe_cast<int>(min(data_.max_size(), safe_cast<size_t>(numeric_limits<int>::max())));
         const char *hex_poly_ptr = hex_poly.data();
         while (pos < length)
         {
@@ -118,8 +117,7 @@ namespace seal
             }
 
             // Determine bit length of coefficient.
-            int coeff_bit_count =
-                get_hex_string_bit_count(hex_poly_ptr + pos, coeff_length);
+            int coeff_bit_count = get_hex_string_bit_count(hex_poly_ptr + pos, coeff_length);
             if (coeff_bit_count > assign_coeff_bit_count)
             {
                 assign_coeff_bit_count = coeff_bit_count;
@@ -203,7 +201,7 @@ namespace seal
         return *this;
     }
 
-    void Plaintext::save(ostream &stream) const
+    void Plaintext::save_members(ostream &stream) const
     {
         auto old_except_mask = stream.exceptions();
         try
@@ -211,21 +209,33 @@ namespace seal
             // Throw exceptions on std::ios_base::badbit and std::ios_base::failbit
             stream.exceptions(ios_base::badbit | ios_base::failbit);
 
-            stream.write(reinterpret_cast<const char*>(&parms_id_), sizeof(parms_id_type));
-            stream.write(reinterpret_cast<const char*>(&scale_), sizeof(double));
-            data_.save(stream);
+            stream.write(reinterpret_cast<const char *>(&parms_id_), sizeof(parms_id_type));
+            uint64_t coeff_count64 = static_cast<uint64_t>(coeff_count_);
+            stream.write(reinterpret_cast<const char *>(&coeff_count64), sizeof(uint64_t));
+            stream.write(reinterpret_cast<const char *>(&scale_), sizeof(double));
+            data_.save(stream, compr_mode_type::none);
         }
-        catch (const exception &)
+        catch (const ios_base::failure &)
+        {
+            stream.exceptions(old_except_mask);
+            throw runtime_error("I/O error");
+        }
+        catch (...)
         {
             stream.exceptions(old_except_mask);
             throw;
         }
-
         stream.exceptions(old_except_mask);
     }
 
-    void Plaintext::unsafe_load(istream &stream)
+    void Plaintext::load_members(const SEALContext &context, istream &stream, SEAL_MAYBE_UNUSED SEALVersion version)
     {
+        // Verify parameters
+        if (!context.parameters_set())
+        {
+            throw invalid_argument("encryption parameters are not set correctly");
+        }
+
         Plaintext new_data(data_.pool());
 
         auto old_except_mask = stream.exceptions();
@@ -235,21 +245,53 @@ namespace seal
             stream.exceptions(ios_base::badbit | ios_base::failbit);
 
             parms_id_type parms_id{};
-            stream.read(reinterpret_cast<char*>(&parms_id), sizeof(parms_id_type));
+            stream.read(reinterpret_cast<char *>(&parms_id), sizeof(parms_id_type));
+
+            uint64_t coeff_count64 = 0;
+            stream.read(reinterpret_cast<char *>(&coeff_count64), sizeof(uint64_t));
 
             double scale = 0;
-            stream.read(reinterpret_cast<char*>(&scale), sizeof(double));
+            stream.read(reinterpret_cast<char *>(&scale), sizeof(double));
 
-            // Load the data
-            new_data.data_.load(stream);
-
-            // Set the parms_id
+            // Set the metadata
             new_data.parms_id_ = parms_id;
-
-            // Set the scale
+            new_data.coeff_count_ = safe_cast<size_t>(coeff_count64);
             new_data.scale_ = scale;
+
+            // Checking the validity of loaded metadata
+            // Note: We allow pure key levels here! This is to allow load_members
+            // to be used also when loading derived objects like SecretKey. This
+            // further means that functions reading in Plaintext objects must check
+            // that for those use-cases the Plaintext truly is at the data level
+            // if it is supposed to be. In other words, one cannot assume simply
+            // based on load_members succeeding that the Plaintext is valid for
+            // computations.
+            if (!is_metadata_valid_for(new_data, context, true))
+            {
+                throw logic_error("plaintext data is invalid");
+            }
+
+            // Reserve memory now that the metadata is checked for validity.
+            new_data.data_.reserve(new_data.coeff_count_);
+
+            // Load the data. Note that we are supplying also the expected maximum
+            // size of the loaded DynArray. This is an important security measure to
+            // prevent a malformed DynArray from causing arbitrarily large memory
+            // allocations.
+            new_data.data_.load(stream, new_data.coeff_count_);
+
+            // Verify that the buffer is correct
+            if (!is_buffer_valid(new_data))
+            {
+                throw logic_error("plaintext data is invalid");
+            }
         }
-        catch (const exception &)
+        catch (const ios_base::failure &)
+        {
+            stream.exceptions(old_except_mask);
+            throw runtime_error("I/O error");
+        }
+        catch (...)
         {
             stream.exceptions(old_except_mask);
             throw;
@@ -258,4 +300,4 @@ namespace seal
 
         swap(*this, new_data);
     }
-}
+} // namespace seal

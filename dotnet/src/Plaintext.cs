@@ -3,7 +3,9 @@
 
 using Microsoft.Research.SEAL.Tools;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -97,6 +99,43 @@ namespace Microsoft.Research.SEAL
 
             NativeMethods.Plaintext_Create3(capacity, coeffCount, poolPtr, out IntPtr ptr);
             NativePtr = ptr;
+        }
+
+        /// <summary>
+        /// Constructs a plaintext representing a polynomial with given coefficient values.
+        /// </summary>
+        /// <remarks>
+        /// Constructs a plaintext representing a polynomial with given coefficient values.
+        /// The coefficient count of the polynomial is set to the number of coefficient
+        /// values provided, and the capacity is set to the given value.
+        /// </remarks>
+        /// <param name="coeffs">Desired values of the plaintext coefficients</param>
+        /// <param name="capacity">The capacity</param>
+        /// <param name="pool">The MemoryPoolHandle pointing to a valid memory pool</param>
+        /// <exception cref="ArgumentException">if capacity is less than the size of coeffs</exception>
+        /// <exception cref="ArgumentException">if pool is uninitialized</exception>
+        /// <exception cref="ArgumentNullException">if coeffs is null</exception>
+        public Plaintext(IEnumerable<ulong> coeffs, ulong capacity, MemoryPoolHandle pool = null)
+            : this(capacity, 0, pool)
+        {
+            Set(coeffs);
+        }
+
+        /// <summary>
+        /// Constructs a plaintext representing a polynomial with given coefficient values.
+        /// </summary>
+        /// <remarks>
+        /// Constructs a plaintext representing a polynomial with given coefficient values.
+        /// The coefficient count of the polynomial is set to the number of coefficient
+        /// values provided, and the capacity is set to the same value.
+        /// </remarks>
+        /// <param name="coeffs">Desired values of the plaintext coefficients</param>
+        /// <param name="pool">The MemoryPoolHandle pointing to a valid memory pool</param>
+        /// <exception cref="ArgumentException">if pool is uninitialized</exception>
+        /// <exception cref="ArgumentNullException">if coeffs is null</exception>
+        public Plaintext(IEnumerable<ulong> coeffs, MemoryPoolHandle pool = null) : this(pool)
+        {
+            Set(coeffs);
         }
 
         /// <summary>
@@ -219,22 +258,12 @@ namespace Microsoft.Research.SEAL
         /// <exception cref="InvalidOperationException">if the plaintext is NTT transformed</exception>
         public void Resize(ulong coeffCount)
         {
-            try
-            {
-                NativeMethods.Plaintext_Resize(NativePtr, coeffCount);
-            }
-            catch(COMException ex)
-            {
-                if ((uint)ex.HResult == NativeMethods.Errors.HRInvalidOperation)
-                    throw new InvalidOperationException("Plaintext is NTT transformed", ex);
-                throw;
-            }
+            NativeMethods.Plaintext_Resize(NativePtr, coeffCount);
         }
 
         /// <summary>
         /// Copies a given plaintext to the current one.
         /// </summary>
-        ///
         /// <param name="assign">The plaintext to copy from</param>
         /// <exception cref="ArgumentNullException">if assign is null</exception>
         public void Set(Plaintext assign)
@@ -281,12 +310,29 @@ namespace Microsoft.Research.SEAL
         }
 
         /// <summary>
+        /// Sets the coefficients of the current plaintext to given values.
+        /// </summary>
+        /// <remarks>
+        /// Sets the coefficients of the current plaintext to given values, and sets the ParmsId to ParmsId.Zero,
+        /// effectively marking the plaintext as not NTT transformed.
+        /// </remarks>
+        /// <param name="coeffs">Desired values of the plaintext coefficients</param>
+        /// <exception cref="ArgumentNullException">if coeffs is null</exception>
+        public void Set(IEnumerable<ulong> coeffs)
+        {
+            if (null == coeffs)
+                throw new ArgumentNullException(nameof(coeffs));
+
+            ulong[] coeffArr = coeffs.ToArray();
+            NativeMethods.Plaintext_Set(NativePtr, (ulong)coeffArr.LongLength, coeffArr);
+        }
+
+        /// <summary>
         /// Sets the value of the current plaintext to a given constant polynomial.
         /// </summary>
-        ///
         /// <remarks>
-        /// Sets the value of the current plaintext to a given constant polynomial. The coefficient count
-        /// is set to one.
+        /// Sets the value of the current plaintext to a given constant polynomial and sets the ParmsId to ParmsId.Zero,
+        /// effectively marking the plaintext as not NTT transformed. The coefficient count is set to one.
         /// </remarks>
         /// <param name="constCoeff">The constant coefficient</param>
         public void Set(ulong constCoeff)
@@ -294,11 +340,9 @@ namespace Microsoft.Research.SEAL
             NativeMethods.Plaintext_Set(NativePtr, constCoeff);
         }
 
-
         /// <summary>
         /// Sets a given range of coefficients of a plaintext polynomial to zero.
         /// </summary>
-        ///
         /// <param name="startCoeff">The index of the first coefficient to set to zero</param>
         /// <param name="length">The number of coefficients to set to zero</param>
         /// <exception cref="ArgumentOutOfRangeException">if startCoeff is not within [0, CoeffCount)</exception>
@@ -449,12 +493,9 @@ namespace Microsoft.Research.SEAL
         /// <exception cref="InvalidOperationException">if the plaintext is in NTT transformed form</exception>
         public override string ToString()
         {
-            ulong length = 0;
-            NativeMethods.Plaintext_ToString(NativePtr, ref length, outstr: null);
-
+            NativeMethods.Plaintext_ToString(NativePtr, null, out ulong length);
             StringBuilder buffer = new StringBuilder(checked((int)length));
-            NativeMethods.Plaintext_ToString(NativePtr, ref length, buffer);
-
+            NativeMethods.Plaintext_ToString(NativePtr, buffer, out length);
             return buffer.ToString();
         }
 
@@ -475,110 +516,115 @@ namespace Microsoft.Research.SEAL
         }
 
         /// <summary>
-        /// Saves the plaintext to an output stream.
+        /// Returns an upper bound on the size of the ciphertext, as if it was written
+        /// to an output stream.
         /// </summary>
-        /// <remarks>
-        /// Saves the plaintext to an output stream. The output is in binary format
-        /// and not human-readable. The output stream must have the "binary" flag set.
-        /// </remarks>
-        /// <param name="stream">The stream to save the plaintext to</param>
-        /// <exception cref="ArgumentNullException">if stream is null</exception>
-        /// <exception cref="ArgumentException">if the plaintext could not be written
-        /// to stream</exception>
-        public void Save(Stream stream)
+        /// <param name="comprMode">The compression mode</param>
+        /// <exception cref="ArgumentException">if the compression mode is not
+        /// supported</exception>
+        /// <exception cref="InvalidOperationException">if the size does not fit in
+        /// the return type</exception>
+        public long SaveSize(ComprModeType? comprMode = null)
         {
-            if (null == stream)
-                throw new ArgumentNullException(nameof(stream));
+            comprMode = comprMode ?? Serialization.ComprModeDefault;
+            if (!Serialization.IsSupportedComprMode(comprMode.Value))
+                throw new ArgumentException("Unsupported compression mode");
 
-            try
-            {
-                using (BinaryWriter writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
-                {
-                    ParmsId.Save(stream);
-                    writer.Write(Scale);
-                    writer.Write(CoeffCount);
-                    for (ulong i = 0; i < CoeffCount; i++)
-                    {
-                        ulong data = this[i];
-                        writer.Write(data);
-                    }
-                }
-            }
-            catch (IOException ex)
-            {
-                throw new ArgumentException("Could not write KSwitchKeys", ex);
-            }
+            ComprModeType comprModeValue = comprMode.Value;
+            NativeMethods.Plaintext_SaveSize(
+                NativePtr, (byte)comprModeValue, out long outBytes);
+            return outBytes;
         }
 
-        /// <summary>
+        /// <summary>Saves the Plaintext to an output stream.</summary>
+        /// <remarks>
+        /// Saves the Plaintext to an output stream. The output is in binary format
+        /// and not human-readable.
+        /// </remarks>
+        /// <param name="stream">The stream to save the Plaintext to</param>
+        /// <param name="comprMode">The desired compression mode</param>
+        /// <exception cref="ArgumentNullException">if stream is null</exception>
+        /// <exception cref="ArgumentException">if the stream is closed or does not
+        /// support writing, or if compression mode is not supported</exception>
+        /// <exception cref="IOException">if I/O operations failed</exception>
+        /// <exception cref="InvalidOperationException">if the data to be saved
+        /// is invalid, or if compression failed</exception>
+        public long Save(Stream stream, ComprModeType? comprMode = null)
+        {
+            comprMode = comprMode ?? Serialization.ComprModeDefault;
+            if (!Serialization.IsSupportedComprMode(comprMode.Value))
+                throw new ArgumentException("Unsupported compression mode");
+
+            ComprModeType comprModeValue = comprMode.Value;
+            return Serialization.Save(
+                (byte[] outptr, ulong size, byte cm, out long outBytes) =>
+                    NativeMethods.Plaintext_Save(NativePtr, outptr, size,
+                    cm, out outBytes),
+                SaveSize(comprModeValue), comprModeValue, stream);
+        }
+
+        /// <summary>Loads a plaintext from an input stream overwriting the current
+        /// plaintext.</summary>
+        /// <remarks>
         /// Loads a plaintext from an input stream overwriting the current plaintext.
         /// No checking of the validity of the plaintext data against encryption
         /// parameters is performed. This function should not be used unless the
         /// plaintext comes from a fully trusted source.
-        /// </summary>
-        /// <param name="stream">The stream to load the plaintext from</param>
-        /// <exception cref="ArgumentNullException">if stream is null</exception>
-        /// <exception cref="ArgumentException">if a plaintext could not be read from
-        /// stream</exception>
-        public void UnsafeLoad(Stream stream)
-        {
-            if (null == stream)
-                throw new ArgumentNullException(nameof(stream));
-
-            try
-            {
-                using (BinaryReader reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true))
-                {
-                    ParmsId parms = new ParmsId();
-                    parms.Load(stream);
-
-                    double scale = reader.ReadDouble();
-                    ulong coeffCount = reader.ReadUInt64();
-
-                    ulong[] newData = new ulong[coeffCount];
-                    for (ulong i = 0; i < coeffCount; i++)
-                    {
-                        newData[i] = reader.ReadUInt64();
-                    }
-
-                    NativeMethods.Plaintext_SwapData(NativePtr, coeffCount, newData);
-                    ParmsId = parms;
-                    Scale = scale;
-                }
-            }
-            catch (EndOfStreamException ex)
-            {
-                throw new ArgumentException("Stream ended unexpectedly", ex);
-            }
-            catch (IOException ex)
-            {
-                throw new ArgumentException("Could not read Plaintext", ex);
-            }
-        }
-
-        /// <summary>
-        /// Loads a plaintext from an input stream overwriting the current plaintext.
-        /// The loaded plaintext is verified to be valid for the given SEALContext.
-        /// </summary>
+        /// </remarks>
         /// <param name="context">The SEALContext</param>
         /// <param name="stream">The stream to load the plaintext from</param>
-        /// <exception cref="ArgumentNullException">if either context or stream are null</exception>
-        /// <exception cref="ArgumentException">if the context is not set or encryption
-        /// parameters are not valid</exception>
-        /// <exception cref="ArgumentException">if a plaintext could not be read from
-        /// stream or is invalid for the context</exception>
-        public void Load(SEALContext context, Stream stream)
+        /// <exception cref="ArgumentNullException">if context or stream is
+        /// null</exception>
+        /// <exception cref="ArgumentException">if the stream is closed or does not
+        /// support reading</exception>
+        /// <exception cref="ArgumentException">if the encryption parameters are not valid</exception>
+        /// <exception cref="EndOfStreamException">if the stream ended
+        /// unexpectedly</exception>
+        /// <exception cref="IOException">if I/O operations failed</exception>
+        /// <exception cref="InvalidOperationException">if the data cannot be loaded
+        /// by this version of Microsoft SEAL, if the loaded data is invalid, or if the
+        /// loaded compression mode is not supported</exception>
+        public long UnsafeLoad(SEALContext context, Stream stream)
         {
             if (null == context)
                 throw new ArgumentNullException(nameof(context));
-            if (null == stream)
-                throw new ArgumentNullException(nameof(stream));
 
-            UnsafeLoad(stream);
-            if (!ValCheck.IsValidFor(this, context))
-            {
-                throw new ArgumentException("Plaintext data is invalid for context");
-            }
+            return Serialization.Load(
+                (byte[] outptr, ulong size, out long outBytes) =>
+                    NativeMethods.Plaintext_UnsafeLoad(context.NativePtr, NativePtr,
+                    outptr, size, out outBytes),
+                stream);
+        }
+
+        /// <summary>Loads a plaintext from an input stream overwriting the current
+        /// plaintext.</summary>
+        /// <remarks>
+        /// Loads a plaintext from an input stream overwriting the current plaintext.
+        /// The loaded plaintext is verified to be valid for the given SEALContext.
+        /// </remarks>
+        /// <param name="context">The SEALContext</param>
+        /// <param name="stream">The stream to load the plaintext from</param>
+        /// <exception cref="ArgumentNullException">if context or stream is
+        /// null</exception>
+        /// <exception cref="ArgumentException">if the stream is closed or does not
+        /// support reading</exception>
+        /// <exception cref="ArgumentException">if the encryption parameters are not valid</exception>
+        /// <exception cref="EndOfStreamException">if the stream ended
+        /// unexpectedly</exception>
+        /// <exception cref="IOException">if I/O operations failed</exception>
+        /// <exception cref="InvalidOperationException">if the data cannot be loaded
+        /// by this version of Microsoft SEAL, if the loaded data is invalid, or if the
+        /// loaded compression mode is not supported</exception>
+        public long Load(SEALContext context, Stream stream)
+        {
+            if (null == context)
+                throw new ArgumentNullException(nameof(context));
+
+            return Serialization.Load(
+                (byte[] outptr, ulong size, out long outBytes) =>
+                    NativeMethods.Plaintext_Load(NativePtr, context.NativePtr,
+                    outptr, size, out outBytes),
+                stream);
         }
 
         /// <summary>

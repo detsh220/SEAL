@@ -1,15 +1,15 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
-#include "gtest/gtest.h"
 #include "seal/util/common.h"
 #include <cstdint>
+#include "gtest/gtest.h"
 
 using namespace seal;
 using namespace seal::util;
 using namespace std;
 
-namespace SEALTest
+namespace sealtest
 {
     namespace util
     {
@@ -17,14 +17,10 @@ namespace SEALTest
         {
             ASSERT_EQ(4, bits_per_nibble);
             ASSERT_EQ(8, bits_per_byte);
-            ASSERT_EQ(4, bytes_per_uint32);
             ASSERT_EQ(8, bytes_per_uint64);
-            ASSERT_EQ(32, bits_per_uint32);
             ASSERT_EQ(64, bits_per_uint64);
             ASSERT_EQ(2, nibbles_per_byte);
-            ASSERT_EQ(2, uint32_per_uint64);
             ASSERT_EQ(16, nibbles_per_uint64);
-            ASSERT_EQ(static_cast<uint64_t>(INT64_MAX) + 1, uint64_high_bit);
         }
 
         TEST(Common, UnsignedComparisons)
@@ -39,6 +35,9 @@ namespace SEALTest
             unsigned char pos_uc_max = 0xFF;
             unsigned long long pos_ull = 1;
             unsigned long long pos_ull_max = 0xFFFFFFFFFFFFFFFF;
+#if defined(__aarch64__) || defined(_M_ARM64)
+            unsigned long long pos_ull_neg_c = 0xFF;
+#endif
             long long neg_ull = -1;
 
             ASSERT_TRUE(unsigned_eq(pos_i, pos_i));
@@ -53,8 +52,13 @@ namespace SEALTest
             ASSERT_TRUE(unsigned_eq(pos_uc, pos_c));
             ASSERT_TRUE(unsigned_geq(pos_uc, pos_c));
             ASSERT_TRUE(unsigned_leq(pos_uc, pos_c));
+#if defined(__aarch64__) || defined(_M_ARM64)
+            ASSERT_TRUE(unsigned_eq(pos_uc_max, neg_c));
+            ASSERT_TRUE(unsigned_eq(neg_c, pos_ull_neg_c));
+#else
             ASSERT_TRUE(unsigned_lt(pos_uc_max, neg_c));
             ASSERT_TRUE(unsigned_eq(neg_c, pos_ull_max));
+#endif
             ASSERT_TRUE(unsigned_eq(neg_ull, pos_ull_max));
             ASSERT_FALSE(unsigned_lt(neg_ull, pos_ull_max));
             ASSERT_TRUE(unsigned_lt(pos_ull, pos_ull_max));
@@ -68,6 +72,8 @@ namespace SEALTest
             unsigned char pos_uc_max = 0xFF;
             unsigned long long pos_ull_max = 0xFFFFFFFFFFFFFFFF;
             long long neg_ull = -1;
+            SEAL_MAYBE_UNUSED unsigned long long res_ul;
+            SEAL_MAYBE_UNUSED long long res_l;
 
             ASSERT_EQ(25, mul_safe(pos_i, pos_i));
             ASSERT_EQ(25, mul_safe(neg_i, neg_i));
@@ -78,21 +84,22 @@ namespace SEALTest
             ASSERT_EQ(10, sub_safe(pos_i, neg_i));
             ASSERT_EQ(-10, sub_safe(neg_i, pos_i));
             ASSERT_EQ(unsigned(0), sub_safe(pos_u, pos_u));
-            ASSERT_THROW(sub_safe(unsigned(0), pos_u), out_of_range);
-            ASSERT_THROW(sub_safe(unsigned(4), pos_u), out_of_range);
-            ASSERT_THROW(add_safe(pos_uc_max, (unsigned char)1), out_of_range);
+            ASSERT_THROW(res_ul = sub_safe(unsigned(0), pos_u), logic_error);
+            ASSERT_THROW(res_ul = sub_safe(unsigned(4), pos_u), logic_error);
+            ASSERT_THROW(res_ul = add_safe(pos_uc_max, (unsigned char)1), logic_error);
             ASSERT_TRUE(pos_uc_max == add_safe(pos_uc_max, (unsigned char)0));
-            ASSERT_THROW(mul_safe(pos_ull_max, pos_ull_max), out_of_range);
+            ASSERT_THROW(res_ul = mul_safe(pos_ull_max, pos_ull_max), logic_error);
             ASSERT_EQ(0ULL, mul_safe(0ULL, pos_ull_max));
             ASSERT_TRUE((long long)1 == mul_safe(neg_ull, neg_ull));
-            ASSERT_THROW(mul_safe(pos_uc_max, pos_uc_max), out_of_range);
+            ASSERT_THROW(res_ul = mul_safe(pos_uc_max, pos_uc_max), logic_error);
             ASSERT_EQ(15, add_safe(pos_i, -pos_i, pos_i, pos_i, pos_i));
             ASSERT_EQ(6, add_safe(0, -pos_i, pos_i, 1, pos_i));
             ASSERT_EQ(0, mul_safe(pos_i, pos_i, pos_i, 0, pos_i));
             ASSERT_EQ(625, mul_safe(pos_i, pos_i, pos_i, pos_i));
-            ASSERT_THROW(mul_safe(
-                pos_i, pos_i, pos_i, pos_i, pos_i, pos_i, pos_i,
-                pos_i, pos_i, pos_i, pos_i, pos_i, pos_i, pos_i), out_of_range);
+            ASSERT_THROW(
+                res_l = mul_safe(
+                    pos_i, pos_i, pos_i, pos_i, pos_i, pos_i, pos_i, pos_i, pos_i, pos_i, pos_i, pos_i, pos_i, pos_i),
+                logic_error);
         }
 
         TEST(Common, FitsIn)
@@ -107,7 +114,11 @@ namespace SEALTest
             ASSERT_TRUE(fits_in<unsigned>(pos_s));
             ASSERT_TRUE(fits_in<char>(pos_uc));
             ASSERT_FALSE(fits_in<unsigned>(neg_i));
+#if defined(__aarch64__) || defined(_M_ARM64)
+            ASSERT_TRUE(fits_in<char>(pos_uc_max));
+#else
             ASSERT_FALSE(fits_in<char>(pos_uc_max));
+#endif
             ASSERT_TRUE(fits_in<float>(d));
             ASSERT_TRUE(fits_in<double>(f));
             ASSERT_TRUE(fits_in<int>(d));
@@ -131,30 +142,25 @@ namespace SEALTest
             ASSERT_EQ(4, divide_round_up(13, 4));
         }
 
-        TEST(Common, GetUInt64Byte)
+        TEST(Common, HammingWeight)
         {
-            uint64_t number[2];
-            number[0] = 0x3456789ABCDEF121;
-            number[1] = 0x23456789ABCDEF12;
-            ASSERT_TRUE(SEAL_BYTE(0x21) == *get_uint64_byte(number, 0));
-            ASSERT_TRUE(SEAL_BYTE(0xF1) == *get_uint64_byte(number, 1));
-            ASSERT_TRUE(SEAL_BYTE(0xDE) == *get_uint64_byte(number, 2));
-            ASSERT_TRUE(SEAL_BYTE(0xBC) == *get_uint64_byte(number, 3));
-            ASSERT_TRUE(SEAL_BYTE(0x9A) == *get_uint64_byte(number, 4));
-            ASSERT_TRUE(SEAL_BYTE(0x78) == *get_uint64_byte(number, 5));
-            ASSERT_TRUE(SEAL_BYTE(0x56) == *get_uint64_byte(number, 6));
-            ASSERT_TRUE(SEAL_BYTE(0x34) == *get_uint64_byte(number, 7));
-            ASSERT_TRUE(SEAL_BYTE(0x12) == *get_uint64_byte(number, 8));
-            ASSERT_TRUE(SEAL_BYTE(0xEF) == *get_uint64_byte(number, 9));
-            ASSERT_TRUE(SEAL_BYTE(0xCD) == *get_uint64_byte(number, 10));
-            ASSERT_TRUE(SEAL_BYTE(0xAB) == *get_uint64_byte(number, 11));
-            ASSERT_TRUE(SEAL_BYTE(0x89) == *get_uint64_byte(number, 12));
-            ASSERT_TRUE(SEAL_BYTE(0x67) == *get_uint64_byte(number, 13));
-            ASSERT_TRUE(SEAL_BYTE(0x45) == *get_uint64_byte(number, 14));
-            ASSERT_TRUE(SEAL_BYTE(0x23) == *get_uint64_byte(number, 15));
+            ASSERT_EQ(0, hamming_weight(0));
+            ASSERT_EQ(8, hamming_weight(0xFF));
+            ASSERT_EQ(4, hamming_weight(0xF0));
+            ASSERT_EQ(4, hamming_weight(0x0F));
+            ASSERT_EQ(2, hamming_weight(0xC0));
+            ASSERT_EQ(2, hamming_weight(0x0C));
+            ASSERT_EQ(2, hamming_weight(0x03));
+            ASSERT_EQ(2, hamming_weight(0x30));
+            ASSERT_EQ(4, hamming_weight(0xAA));
+            ASSERT_EQ(4, hamming_weight(0x55));
+            ASSERT_EQ(5, hamming_weight(0xD6));
+            ASSERT_EQ(5, hamming_weight(0x6D));
+            ASSERT_EQ(7, hamming_weight(0xBF));
+            ASSERT_EQ(7, hamming_weight(0xFB));
         }
 
-        template<typename T>
+        template <typename T>
         void ReverseBits32Helper()
         {
             ASSERT_EQ(static_cast<T>(0), reverse_bits(static_cast<T>(0)));
@@ -208,21 +214,21 @@ namespace SEALTest
 
             // Other types
 #ifdef SEAL_USE_IF_CONSTEXPR
-            SEAL_IF_CONSTEXPR (sizeof(unsigned) == 4)
-                ReverseBits32Helper<unsigned>();
+            SEAL_IF_CONSTEXPR(sizeof(unsigned) == 4)
+            ReverseBits32Helper<unsigned>();
 
-            SEAL_IF_CONSTEXPR (sizeof(unsigned long) == 4)
-                ReverseBits32Helper<unsigned long>();
+            SEAL_IF_CONSTEXPR(sizeof(unsigned long) == 4)
+            ReverseBits32Helper<unsigned long>();
 
-            SEAL_IF_CONSTEXPR (sizeof(unsigned long long) == 4)
-                ReverseBits32Helper<unsigned long long>();
+            SEAL_IF_CONSTEXPR(sizeof(unsigned long long) == 4)
+            ReverseBits32Helper<unsigned long long>();
 
-            SEAL_IF_CONSTEXPR (sizeof(size_t) == 4)
-                ReverseBits32Helper<size_t>();
+            SEAL_IF_CONSTEXPR(sizeof(size_t) == 4)
+            ReverseBits32Helper<size_t>();
 #endif
         }
 
-        template<typename T>
+        template <typename T>
         void ReverseBits64Helper()
         {
             ASSERT_EQ(0ULL, reverse_bits<T>(0ULL));
@@ -269,17 +275,17 @@ namespace SEALTest
 
             // Other types
 #ifdef SEAL_USE_IF_CONSTEXPR
-            SEAL_IF_CONSTEXPR (sizeof(unsigned) == 8)
-                ReverseBits64Helper<unsigned>();
+            SEAL_IF_CONSTEXPR(sizeof(unsigned) == 8)
+            ReverseBits64Helper<unsigned>();
 
-            SEAL_IF_CONSTEXPR (sizeof(unsigned long) == 8)
-                ReverseBits64Helper<unsigned long>();
+            SEAL_IF_CONSTEXPR(sizeof(unsigned long) == 8)
+            ReverseBits64Helper<unsigned long>();
 
-            SEAL_IF_CONSTEXPR (sizeof(unsigned long long) == 8)
-                ReverseBits64Helper<unsigned long long>();
+            SEAL_IF_CONSTEXPR(sizeof(unsigned long long) == 8)
+            ReverseBits64Helper<unsigned long long>();
 
-            SEAL_IF_CONSTEXPR (sizeof(size_t) == 8)
-                ReverseBits64Helper<size_t>();
+            SEAL_IF_CONSTEXPR(sizeof(size_t) == 8)
+            ReverseBits64Helper<size_t>();
 #endif
         }
 
@@ -320,5 +326,5 @@ namespace SEALTest
             get_msb_index_generic(&result, 0xFFFFFFFFFFFFFFFF);
             ASSERT_EQ(static_cast<unsigned long>(63), result);
         }
-    }
-}
+    } // namespace util
+} // namespace sealtest

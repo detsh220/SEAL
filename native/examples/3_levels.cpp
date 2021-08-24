@@ -15,7 +15,7 @@ void example_levels()
     related objects that represent them in Microsoft SEAL.
 
     In Microsoft SEAL a set of encryption parameters (excluding the random number
-    generator) is identified uniquely by a SHA-3 hash of the parameters. This
+    generator) is identified uniquely by a 256-bit hash of the parameters. This
     hash is called the `parms_id' and can be easily accessed and printed at any
     time. The hash will change as soon as any of the parameters is changed.
 
@@ -42,7 +42,7 @@ void example_levels()
     node can be identified by the parms_id of its specific encryption parameters
     (poly_modulus_degree remains the same but coeff_modulus varies).
     */
-    EncryptionParameters parms(scheme_type::BFV);
+    EncryptionParameters parms(scheme_type::bfv);
 
     size_t poly_modulus_degree = 8192;
     parms.set_poly_modulus_degree(poly_modulus_degree);
@@ -54,14 +54,14 @@ void example_levels()
 
         CoeffModulus::MaxBitCount(poly_modulus_degree)
 
-    returns 218 (less than 50+30+30+50+50=210).
+    returns 218 (greater than 50+30+30+50+50=210).
 
     Due to the modulus switching chain, the order of the 5 primes is significant.
     The last prime has a special meaning and we call it the `special prime'. Thus,
     the first parameter set in the modulus switching chain is the only one that
     involves the special prime. All key objects, such as SecretKey, are created
     at this highest level. All data objects, such as Ciphertext, can be only at
-    lower levels. The special modulus should be as large as the largest of the
+    lower levels. The special prime should be as large as the largest of the
     other primes in the coeff_modulus, although this is not a strict requirement.
 
               special prime +---------+
@@ -81,16 +81,15 @@ void example_levels()
                                                |
                     coeff_modulus: { 50 }  +---+  Level 0 (lowest level)
     */
-    parms.set_coeff_modulus(CoeffModulus::Create(
-        poly_modulus_degree, { 50, 30, 30, 50, 50 }));
+    parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 50, 30, 30, 50, 50 }));
 
     /*
     In this example the plain_modulus does not play much of a role; we choose
     some reasonable value.
     */
-    parms.set_plain_modulus(1 << 20);
+    parms.set_plain_modulus(PlainModulus::Batching(poly_modulus_degree, 20));
 
-    auto context = SEALContext::Create(parms);
+    SEALContext context(parms);
     print_parameters(context);
     cout << endl;
 
@@ -110,13 +109,13 @@ void example_levels()
     /*
     First print the key level parameter information.
     */
-    auto context_data = context->key_context_data();
+    auto context_data = context.key_context_data();
     cout << "----> Level (chain index): " << context_data->chain_index();
     cout << " ...... key_context_data()" << endl;
     cout << "      parms_id: " << context_data->parms_id() << endl;
     cout << "      coeff_modulus primes: ";
     cout << hex;
-    for(const auto &prime : context_data->parms().coeff_modulus())
+    for (const auto &prime : context_data->parms().coeff_modulus())
     {
         cout << prime.value() << " ";
     }
@@ -127,15 +126,15 @@ void example_levels()
     /*
     Next iterate over the remaining (data) levels.
     */
-    context_data = context->first_context_data();
+    context_data = context.first_context_data();
     while (context_data)
     {
         cout << " Level (chain index): " << context_data->chain_index();
-        if (context_data->parms_id() == context->first_parms_id())
+        if (context_data->parms_id() == context.first_parms_id())
         {
             cout << " ...... first_context_data()" << endl;
         }
-        else if (context_data->parms_id() == context->last_parms_id())
+        else if (context_data->parms_id() == context.last_parms_id())
         {
             cout << " ...... last_context_data()" << endl;
         }
@@ -146,7 +145,7 @@ void example_levels()
         cout << "      parms_id: " << context_data->parms_id() << endl;
         cout << "      coeff_modulus primes: ";
         cout << hex;
-        for(const auto &prime : context_data->parms().coeff_modulus())
+        for (const auto &prime : context_data->parms().coeff_modulus())
         {
             cout << prime.value() << " ";
         }
@@ -165,16 +164,17 @@ void example_levels()
     We create some keys and check that indeed they appear at the highest level.
     */
     KeyGenerator keygen(context);
-    auto public_key = keygen.public_key();
     auto secret_key = keygen.secret_key();
-    auto relin_keys = keygen.relin_keys();
-    auto galois_keys = keygen.galois_keys();
+    PublicKey public_key;
+    keygen.create_public_key(public_key);
+    RelinKeys relin_keys;
+    keygen.create_relin_keys(relin_keys);
+
     print_line(__LINE__);
     cout << "Print the parameter IDs of generated elements." << endl;
     cout << "    + public_key:  " << public_key.parms_id() << endl;
     cout << "    + secret_key:  " << secret_key.parms_id() << endl;
     cout << "    + relin_keys:  " << relin_keys.parms_id() << endl;
-    cout << "    + galois_keys: " << galois_keys.parms_id() << endl;
 
     Encryptor encryptor(context, public_key);
     Evaluator evaluator(context);
@@ -199,14 +199,13 @@ void example_levels()
     */
     print_line(__LINE__);
     cout << "Perform modulus switching on encrypted and print." << endl;
-    context_data = context->first_context_data();
+    context_data = context.first_context_data();
     cout << "---->";
-    while(context_data->next_context_data())
+    while (context_data->next_context_data())
     {
         cout << " Level (chain index): " << context_data->chain_index() << endl;
         cout << "      parms_id of encrypted: " << encrypted.parms_id() << endl;
-        cout << "      Noise budget at this level: "
-            << decryptor.invariant_noise_budget(encrypted) << " bits" << endl;
+        cout << "      Noise budget at this level: " << decryptor.invariant_noise_budget(encrypted) << " bits" << endl;
         cout << "\\" << endl;
         cout << " \\-->";
         evaluator.mod_switch_to_next_inplace(encrypted);
@@ -214,8 +213,7 @@ void example_levels()
     }
     cout << " Level (chain index): " << context_data->chain_index() << endl;
     cout << "      parms_id of encrypted: " << encrypted.parms_id() << endl;
-    cout << "      Noise budget at this level: "
-        << decryptor.invariant_noise_budget(encrypted) << " bits" << endl;
+    cout << "      Noise budget at this level: " << decryptor.invariant_noise_budget(encrypted) << " bits" << endl;
     cout << "\\" << endl;
     cout << " \\-->";
     cout << " End of chain reached" << endl << endl;
@@ -239,45 +237,48 @@ void example_levels()
     parameters in the chain before sending it back to the secret key holder for
     decryption.
 
-    Also the lost noise budget is actually not as issue at all, if we do things
+    Also the lost noise budget is actually not an issue at all, if we do things
     right, as we will see below.
 
     First we recreate the original ciphertext and perform some computations.
     */
     cout << "Computation is more efficient with modulus switching." << endl;
     print_line(__LINE__);
-    cout << "Compute the fourth power." << endl;
+    cout << "Compute the 8th power." << endl;
     encryptor.encrypt(plain, encrypted);
-    cout << "    + Noise budget before squaring:         "
-        << decryptor.invariant_noise_budget(encrypted) << " bits" << endl;
+    cout << "    + Noise budget fresh:                   " << decryptor.invariant_noise_budget(encrypted) << " bits"
+         << endl;
     evaluator.square_inplace(encrypted);
     evaluator.relinearize_inplace(encrypted, relin_keys);
-    cout << "    + Noise budget after squaring:          "
-        << decryptor.invariant_noise_budget(encrypted) << " bits" << endl;
+    cout << "    + Noise budget of the 2nd power:         " << decryptor.invariant_noise_budget(encrypted) << " bits"
+         << endl;
+    evaluator.square_inplace(encrypted);
+    evaluator.relinearize_inplace(encrypted, relin_keys);
+    cout << "    + Noise budget of the 4th power:         " << decryptor.invariant_noise_budget(encrypted) << " bits"
+         << endl;
 
     /*
     Surprisingly, in this case modulus switching has no effect at all on the
     noise budget.
     */
     evaluator.mod_switch_to_next_inplace(encrypted);
-    cout << "    + Noise budget after modulus switching: "
-        << decryptor.invariant_noise_budget(encrypted) << " bits" << endl;
-
+    cout << "    + Noise budget after modulus switching:  " << decryptor.invariant_noise_budget(encrypted) << " bits"
+         << endl;
     /*
     This means that there is no harm at all in dropping some of the coefficient
     modulus after doing enough computations. In some cases one might want to
     switch to a lower level slightly earlier, actually sacrificing some of the
     noise budget in the process, to gain computational performance from having
     smaller parameters. We see from the print-out that the next modulus switch
-    should be done ideally when the noise budget is down to around 81 bits.
+    should be done ideally when the noise budget is down to around 25 bits.
     */
     evaluator.square_inplace(encrypted);
     evaluator.relinearize_inplace(encrypted, relin_keys);
-    cout << "    + Noise budget after squaring:          "
-        << decryptor.invariant_noise_budget(encrypted) << " bits" << endl;
+    cout << "    + Noise budget of the 8th power:         " << decryptor.invariant_noise_budget(encrypted) << " bits"
+         << endl;
     evaluator.mod_switch_to_next_inplace(encrypted);
-    cout << "    + Noise budget after modulus switching: "
-        << decryptor.invariant_noise_budget(encrypted) << " bits" << endl;
+    cout << "    + Noise budget after modulus switching:  " << decryptor.invariant_noise_budget(encrypted) << " bits"
+         << endl;
 
     /*
     At this point the ciphertext still decrypts correctly, has very small size,
@@ -286,15 +287,15 @@ void example_levels()
     chain.
     */
     decryptor.decrypt(encrypted, plain);
-    cout << "    + Decryption of fourth power (hexadecimal) ...... Correct." << endl;
+    cout << "    + Decryption of the 8th power (hexadecimal) ...... Correct." << endl;
     cout << "    " << plain.to_string() << endl << endl;
 
     /*
     In BFV modulus switching is not necessary and in some cases the user might
     not want to create the modulus switching chain, except for the highest two
-    levels. This can be done by passing a bool `false' to SEALContext::Create.
+    levels. This can be done by passing a bool `false' to SEALContext constructor.
     */
-    context = SEALContext::Create(parms, false);
+    context = SEALContext(parms, false);
 
     /*
     We can check that indeed the modulus switching chain has been created only
@@ -305,8 +306,7 @@ void example_levels()
     print_line(__LINE__);
     cout << "Print the modulus switching chain." << endl;
     cout << "---->";
-    for (context_data = context->key_context_data(); context_data;
-        context_data = context_data->next_context_data())
+    for (context_data = context.key_context_data(); context_data; context_data = context_data->next_context_data())
     {
         cout << " Level (chain index): " << context_data->chain_index() << endl;
         cout << "      parms_id: " << context_data->parms_id() << endl;

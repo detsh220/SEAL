@@ -18,26 +18,26 @@ namespace SEALNetExamples
         {
             Utilities.PrintExampleBanner("Example: Rotation / Rotation in BFV");
 
-            EncryptionParameters parms = new EncryptionParameters(SchemeType.BFV);
+            using EncryptionParameters parms = new EncryptionParameters(SchemeType.BFV);
 
             ulong polyModulusDegree = 8192;
             parms.PolyModulusDegree = polyModulusDegree;
             parms.CoeffModulus = CoeffModulus.BFVDefault(polyModulusDegree);
             parms.PlainModulus = PlainModulus.Batching(polyModulusDegree, 20);
 
-            SEALContext context = new SEALContext(parms);
+            using SEALContext context = new SEALContext(parms);
             Utilities.PrintParameters(context);
             Console.WriteLine();
 
-            KeyGenerator keygen = new KeyGenerator(context);
-            PublicKey publicKey = keygen.PublicKey;
-            SecretKey secretKey = keygen.SecretKey;
-            RelinKeys relinKeys = keygen.RelinKeys();
-            Encryptor encryptor = new Encryptor(context, publicKey);
-            Evaluator evaluator = new Evaluator(context);
-            Decryptor decryptor = new Decryptor(context, secretKey);
+            using KeyGenerator keygen = new KeyGenerator(context);
+            using SecretKey secretKey = keygen.SecretKey;
+            keygen.CreatePublicKey(out PublicKey publicKey);
+            keygen.CreateRelinKeys(out RelinKeys relinKeys);
+            using Encryptor encryptor = new Encryptor(context, publicKey);
+            using Evaluator evaluator = new Evaluator(context);
+            using Decryptor decryptor = new Decryptor(context, secretKey);
 
-            BatchEncoder batchEncoder = new BatchEncoder(context);
+            using BatchEncoder batchEncoder = new BatchEncoder(context);
             ulong slotCount = batchEncoder.SlotCount;
             ulong rowSize = slotCount / 2;
             Console.WriteLine($"Plaintext matrix row size: {rowSize}");
@@ -61,10 +61,10 @@ namespace SEALNetExamples
             the plaintext as usual.
             */
             Utilities.PrintLine();
-            Plaintext plainMatrix = new Plaintext();
+            using Plaintext plainMatrix = new Plaintext();
             Console.WriteLine("Encode and encrypt.");
             batchEncoder.Encode(podMatrix, plainMatrix);
-            Ciphertext encryptedMatrix = new Ciphertext();
+            using Ciphertext encryptedMatrix = new Ciphertext();
             encryptor.Encrypt(plainMatrix, encryptedMatrix);
             Console.WriteLine("    + Noise budget in fresh encryption: {0} bits",
                 decryptor.InvariantNoiseBudget(encryptedMatrix));
@@ -74,15 +74,15 @@ namespace SEALNetExamples
             Rotations require yet another type of special key called `Galois keys'. These
             are easily obtained from the KeyGenerator.
             */
-            GaloisKeys galKeys = keygen.GaloisKeys();
+            keygen.CreateGaloisKeys(out GaloisKeys galoisKeys);
 
             /*
             Now rotate both matrix rows 3 steps to the left, decrypt, decode, and print.
             */
             Utilities.PrintLine();
             Console.WriteLine("Rotate rows 3 steps left.");
-            evaluator.RotateRowsInplace(encryptedMatrix, 3, galKeys);
-            Plaintext plainResult = new Plaintext();
+            evaluator.RotateRowsInplace(encryptedMatrix, 3, galoisKeys);
+            using Plaintext plainResult = new Plaintext();
             Console.WriteLine("    + Noise budget after rotation: {0} bits",
                 decryptor.InvariantNoiseBudget(encryptedMatrix));
             Console.WriteLine("    + Decrypt and decode ...... Correct.");
@@ -96,7 +96,7 @@ namespace SEALNetExamples
             */
             Utilities.PrintLine();
             Console.WriteLine("Rotate columns.");
-            evaluator.RotateColumnsInplace(encryptedMatrix, galKeys);
+            evaluator.RotateColumnsInplace(encryptedMatrix, galoisKeys);
             Console.WriteLine("    + Noise budget after rotation: {0} bits",
                 decryptor.InvariantNoiseBudget(encryptedMatrix));
             Console.WriteLine("    + Decrypt and decode ...... Correct.");
@@ -109,7 +109,7 @@ namespace SEALNetExamples
             */
             Utilities.PrintLine();
             Console.WriteLine("Rotate rows 4 steps right.");
-            evaluator.RotateRowsInplace(encryptedMatrix, -4, galKeys);
+            evaluator.RotateRowsInplace(encryptedMatrix, -4, galoisKeys);
             Console.WriteLine("    + Noise budget after rotation: {0} bits",
                 decryptor.InvariantNoiseBudget(encryptedMatrix));
             Console.WriteLine("    + Decrypt and decode ...... Correct.");
@@ -130,27 +130,27 @@ namespace SEALNetExamples
         {
             Utilities.PrintExampleBanner("Example: Rotation / Rotation in CKKS");
 
-            EncryptionParameters parms = new EncryptionParameters(SchemeType.CKKS);
+            using EncryptionParameters parms = new EncryptionParameters(SchemeType.CKKS);
 
             ulong polyModulusDegree = 8192;
             parms.PolyModulusDegree = polyModulusDegree;
             parms.CoeffModulus = CoeffModulus.Create(
                 polyModulusDegree, new int[] { 40, 40, 40, 40, 40 });
 
-            SEALContext context = new SEALContext(parms);
+            using SEALContext context = new SEALContext(parms);
             Utilities.PrintParameters(context);
             Console.WriteLine();
 
-            KeyGenerator keygen = new KeyGenerator(context);
-            PublicKey publicKey = keygen.PublicKey;
-            SecretKey secretKey = keygen.SecretKey;
-            RelinKeys relinKeys = keygen.RelinKeys();
-            GaloisKeys galKeys = keygen.GaloisKeys();
-            Encryptor encryptor = new Encryptor(context, publicKey);
-            Evaluator evaluator = new Evaluator(context);
-            Decryptor decryptor = new Decryptor(context, secretKey);
+            using KeyGenerator keygen = new KeyGenerator(context);
+            using SecretKey secretKey = keygen.SecretKey;
+            keygen.CreatePublicKey(out PublicKey publicKey);
+            keygen.CreateRelinKeys(out RelinKeys relinKeys);
+            keygen.CreateGaloisKeys(out GaloisKeys galoisKeys);
+            using Encryptor encryptor = new Encryptor(context, publicKey);
+            using Evaluator evaluator = new Evaluator(context);
+            using Decryptor decryptor = new Decryptor(context, secretKey);
 
-            CKKSEncoder ckksEncoder = new CKKSEncoder(context);
+            using CKKSEncoder ckksEncoder = new CKKSEncoder(context);
 
             ulong slotCount = ckksEncoder.SlotCount;
             Console.WriteLine($"Number of slots: {slotCount}");
@@ -168,15 +168,15 @@ namespace SEALNetExamples
 
             Utilities.PrintLine();
             Console.WriteLine("Encode and encrypt.");
-            Plaintext plain = new Plaintext();
+            using Plaintext plain = new Plaintext();
             ckksEncoder.Encode(input, scale, plain);
-            Ciphertext encrypted = new Ciphertext();
+            using Ciphertext encrypted = new Ciphertext();
             encryptor.Encrypt(plain, encrypted);
 
-            Ciphertext rotated = new Ciphertext();
+            using Ciphertext rotated = new Ciphertext();
             Utilities.PrintLine();
             Console.WriteLine("Rotate 2 steps left.");
-            evaluator.RotateVector(encrypted, 2, galKeys, rotated);
+            evaluator.RotateVector(encrypted, 2, galoisKeys, rotated);
             Console.WriteLine("    + Decrypt and decode ...... Correct.");
             decryptor.Decrypt(encrypted, plain);
             List<double> result = new List<double>();

@@ -5,6 +5,7 @@ using Microsoft.Research.SEAL;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices.ComTypes;
 
 namespace SEALNetTest
 {
@@ -17,7 +18,7 @@ namespace SEALNetTest
             EncryptionParameters parms = new EncryptionParameters(SchemeType.BFV);
             parms.PolyModulusDegree = 64;
             parms.CoeffModulus = CoeffModulus.Create(64, new int[]{ 60 });
-            parms.PlainModulus = new SmallModulus(257);
+            parms.PlainModulus = new Modulus(257);
 
             SEALContext context = new SEALContext(parms,
                 expandModChain: false,
@@ -90,7 +91,7 @@ namespace SEALNetTest
             EncryptionParameters parms = new EncryptionParameters(SchemeType.BFV);
             parms.PolyModulusDegree = 64;
             parms.CoeffModulus = CoeffModulus.Create(64, new int[] { 60 });
-            parms.PlainModulus = new SmallModulus(257);
+            parms.PlainModulus = new Modulus(257);
 
             SEALContext context = new SEALContext(parms,
                 expandModChain: false,
@@ -158,45 +159,6 @@ namespace SEALNetTest
         }
 
         [TestMethod]
-        public void EncodeInPlaceTest()
-        {
-            EncryptionParameters parms = new EncryptionParameters(SchemeType.BFV)
-            {
-                PolyModulusDegree = 64,
-                CoeffModulus = CoeffModulus.Create(64, new int[] { 60 }),
-                PlainModulus = new SmallModulus(257)
-            };
-
-            SEALContext context = new SEALContext(parms,
-                expandModChain: false,
-                secLevel: SecLevelType.None);
-
-            BatchEncoder encoder = new BatchEncoder(context);
-
-            Assert.AreEqual(64ul, encoder.SlotCount);
-
-            Plaintext plain = new Plaintext("6x^5 + 5x^4 + 4x^3 + 3x^2 + 2x^1 + 1");
-            Assert.AreEqual(6ul, plain.CoeffCount);
-
-            encoder.Encode(plain);
-
-            Assert.AreEqual(64ul, plain.CoeffCount);
-
-            encoder.Decode(plain);
-            Assert.AreEqual(64ul, plain.CoeffCount);
-
-            for (ulong i = 0; i < 6; i++)
-            {
-                Assert.AreEqual((i + 1), plain[i]);
-            }
-
-            for (ulong i = 6; i < plain.CoeffCount; i++)
-            {
-                Assert.AreEqual(0ul, plain[i]);
-            }
-        }
-
-        [TestMethod]
         public void SchemeIsCKKSTest()
         {
             EncryptionParameters parms = new EncryptionParameters(SchemeType.CKKS)
@@ -209,7 +171,7 @@ namespace SEALNetTest
                 expandModChain: false,
                 secLevel: SecLevelType.None);
 
-            Assert.ThrowsException<ArgumentException>(() =>
+            Utilities.AssertThrows<ArgumentException>(() =>
             {
                 BatchEncoder encoder = new BatchEncoder(context);
             });
@@ -222,7 +184,7 @@ namespace SEALNetTest
             {
                 PolyModulusDegree = 64,
                 CoeffModulus = CoeffModulus.Create(64, new int[] { 60 }),
-                PlainModulus = new SmallModulus(257)
+                PlainModulus = new Modulus(257)
             };
 
             SEALContext context = new SEALContext(parms,
@@ -237,27 +199,21 @@ namespace SEALNetTest
             Plaintext plain_null = null;
             MemoryPoolHandle pool_uninit = new MemoryPoolHandle();
 
-            Assert.ThrowsException<ArgumentNullException>(() => enc = new BatchEncoder(null));
+            Utilities.AssertThrows<ArgumentNullException>(() => enc = new BatchEncoder(null));
 
-            Assert.ThrowsException<ArgumentNullException>(() => enc.Encode(valu, plain_null));
-            Assert.ThrowsException<ArgumentNullException>(() => enc.Encode(valu_null, plain));
+            Utilities.AssertThrows<ArgumentNullException>(() => enc.Encode(valu, plain_null));
+            Utilities.AssertThrows<ArgumentNullException>(() => enc.Encode(valu_null, plain));
 
-            Assert.ThrowsException<ArgumentNullException>(() => enc.Encode(vall, plain_null));
-            Assert.ThrowsException<ArgumentNullException>(() => enc.Encode(vall_null, plain));
+            Utilities.AssertThrows<ArgumentNullException>(() => enc.Encode(vall, plain_null));
+            Utilities.AssertThrows<ArgumentNullException>(() => enc.Encode(vall_null, plain));
 
-            Assert.ThrowsException<ArgumentNullException>(() => enc.Encode(plain_null));
-            Assert.ThrowsException<ArgumentException>(() => enc.Encode(plain, pool_uninit));
+            Utilities.AssertThrows<ArgumentNullException>(() => enc.Decode(plain, valu_null));
+            Utilities.AssertThrows<ArgumentNullException>(() => enc.Decode(plain_null, valu));
+            Utilities.AssertThrows<ArgumentException>(() => enc.Decode(plain, valu, pool_uninit));
 
-            Assert.ThrowsException<ArgumentNullException>(() => enc.Decode(plain, valu_null));
-            Assert.ThrowsException<ArgumentNullException>(() => enc.Decode(plain_null, valu));
-            Assert.ThrowsException<ArgumentException>(() => enc.Decode(plain, valu, pool_uninit));
-
-            Assert.ThrowsException<ArgumentNullException>(() => enc.Decode(plain, vall_null));
-            Assert.ThrowsException<ArgumentNullException>(() => enc.Decode(plain_null, vall));
-            Assert.ThrowsException<ArgumentException>(() => enc.Decode(plain, vall, pool_uninit));
-
-            Assert.ThrowsException<ArgumentNullException>(() => enc.Decode(plain_null));
-            Assert.ThrowsException<ArgumentException>(() => enc.Decode(plain, pool_uninit));
+            Utilities.AssertThrows<ArgumentNullException>(() => enc.Decode(plain, vall_null));
+            Utilities.AssertThrows<ArgumentNullException>(() => enc.Decode(plain_null, vall));
+            Utilities.AssertThrows<ArgumentException>(() => enc.Decode(plain, vall, pool_uninit));
         }
     }
 }

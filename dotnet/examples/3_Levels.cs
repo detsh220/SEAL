@@ -17,7 +17,7 @@ namespace SEALNetExamples
             related objects that represent them in Microsoft SEAL.
 
             In Microsoft SEAL a set of encryption parameters (excluding the random number
-            generator) is identified uniquely by a SHA-3 hash of the parameters. This
+            generator) is identified uniquely by a 256-bit hash of the parameters. This
             hash is called the `ParmsId' and can be easily accessed and printed at any
             time. The hash will change as soon as any of the parameters is changed.
 
@@ -44,7 +44,7 @@ namespace SEALNetExamples
             node can be identified by the ParmsId of its specific encryption parameters
             (PolyModulusDegree remains the same but CoeffModulus varies).
             */
-            EncryptionParameters parms = new EncryptionParameters(SchemeType.BFV);
+            using EncryptionParameters parms = new EncryptionParameters(SchemeType.BFV);
             ulong polyModulusDegree = 8192;
             parms.PolyModulusDegree = polyModulusDegree;
 
@@ -55,7 +55,7 @@ namespace SEALNetExamples
 
                 CoeffModulus.MaxBitCount(polyModulusDegree)
 
-            returns 218 (less than 50+30+30+50+50=210).
+            returns 218 (greater than 50+30+30+50+50=210).
 
             Due to the modulus switching chain, the order of the 5 primes is significant.
             The last prime has a special meaning and we call it the `special prime'. Thus,
@@ -89,9 +89,9 @@ namespace SEALNetExamples
             In this example the PlainModulus does not play much of a role; we choose
             some reasonable value.
             */
-            parms.PlainModulus = new SmallModulus(1 << 20);
+            parms.PlainModulus = PlainModulus.Batching(polyModulusDegree, 20);
 
-            SEALContext context = new SEALContext(parms);
+            using SEALContext context = new SEALContext(parms);
             Utilities.PrintParameters(context);
 
             /*
@@ -116,7 +116,7 @@ namespace SEALNetExamples
                 contextData.ChainIndex);
             Console.WriteLine($"      ParmsId: {contextData.ParmsId}");
             Console.Write("      CoeffModulus primes: ");
-            foreach (SmallModulus prime in contextData.Parms.CoeffModulus)
+            foreach (Modulus prime in contextData.Parms.CoeffModulus)
             {
                 Console.Write($"{Utilities.ULongToString(prime.Value)} ");
             }
@@ -145,7 +145,7 @@ namespace SEALNetExamples
                 }
                 Console.WriteLine($"      ParmsId: {contextData.ParmsId}");
                 Console.Write("      CoeffModulus primes: ");
-                foreach (SmallModulus prime in contextData.Parms.CoeffModulus)
+                foreach (Modulus prime in contextData.Parms.CoeffModulus)
                 {
                     Console.Write($"{Utilities.ULongToString(prime.Value)} ");
                 }
@@ -164,28 +164,27 @@ namespace SEALNetExamples
             /*
             We create some keys and check that indeed they appear at the highest level.
             */
-            KeyGenerator keygen = new KeyGenerator(context);
-            PublicKey publicKey = keygen.PublicKey;
-            SecretKey secretKey = keygen.SecretKey;
-            RelinKeys relinKeys = keygen.RelinKeys();
-            GaloisKeys galoisKeys = keygen.GaloisKeys();
+            using KeyGenerator keygen = new KeyGenerator(context);
+            using SecretKey secretKey = keygen.SecretKey;
+            keygen.CreatePublicKey(out PublicKey publicKey);
+            keygen.CreateRelinKeys(out RelinKeys relinKeys);
+
             Utilities.PrintLine();
             Console.WriteLine("Print the parameter IDs of generated elements.");
             Console.WriteLine($"    + publicKey:  {publicKey.ParmsId}");
             Console.WriteLine($"    + secretKey:  {secretKey.ParmsId}");
             Console.WriteLine($"    + relinKeys:  {relinKeys.ParmsId}");
-            Console.WriteLine($"    + galoisKeys: {galoisKeys.ParmsId}");
 
-            Encryptor encryptor = new Encryptor(context, publicKey);
-            Evaluator evaluator = new Evaluator(context);
-            Decryptor decryptor = new Decryptor(context, secretKey);
+            using Encryptor encryptor = new Encryptor(context, publicKey);
+            using Evaluator evaluator = new Evaluator(context);
+            using Decryptor decryptor = new Decryptor(context, secretKey);
 
             /*
             In the BFV scheme plaintexts do not carry a ParmsId, but ciphertexts do. Note
             how the freshly encrypted ciphertext is at the highest data level.
             */
-            Plaintext plain = new Plaintext("1x^3 + 2x^2 + 3x^1 + 4");
-            Ciphertext encrypted = new Ciphertext();
+            using Plaintext plain = new Plaintext("1x^3 + 2x^2 + 3x^1 + 4");
+            using Ciphertext encrypted = new Ciphertext();
             encryptor.Encrypt(plain, encrypted);
             Console.WriteLine($"    + plain:      {plain.ParmsId} (not set in BFV)");
             Console.WriteLine($"    + encrypted:  {encrypted.ParmsId}");
@@ -241,22 +240,25 @@ namespace SEALNetExamples
             parameters in the chain before sending it back to the secret key holder for
             decryption.
 
-            Also the lost noise budget is actually not as issue at all, if we do things
+            Also the lost noise budget is actually not an issue at all, if we do things
             right, as we will see below.
 
             First we recreate the original ciphertext and perform some computations.
             */
             Console.WriteLine("Computation is more efficient with modulus switching.");
             Utilities.PrintLine();
-            Console.WriteLine("Compute the fourth power.");
+            Console.WriteLine("Compute the eight power.");
             encryptor.Encrypt(plain, encrypted);
-            Console.WriteLine("    + Noise budget before squaring:         {0} bits",
+            Console.WriteLine("    + Noise budget fresh:                  {0} bits",
                 decryptor.InvariantNoiseBudget(encrypted));
             evaluator.SquareInplace(encrypted);
             evaluator.RelinearizeInplace(encrypted, relinKeys);
-            Console.WriteLine("    + Noise budget after squaring:          {0} bits",
+            Console.WriteLine("    + Noise budget of the 2nd power:        {0} bits",
                 decryptor.InvariantNoiseBudget(encrypted));
-
+            evaluator.SquareInplace(encrypted);
+            evaluator.RelinearizeInplace(encrypted, relinKeys);
+            Console.WriteLine("    + Noise budget of the 4th power:        {0} bits",
+                decryptor.InvariantNoiseBudget(encrypted));
             /*
             Surprisingly, in this case modulus switching has no effect at all on the
             noise budget.
@@ -272,11 +274,11 @@ namespace SEALNetExamples
             switch to a lower level slightly earlier, actually sacrificing some of the
             noise budget in the process, to gain computational performance from having
             smaller parameters. We see from the print-out that the next modulus switch
-            should be done ideally when the noise budget is down to around 81 bits.
+            should be done ideally when the noise budget is down to around 25 bits.
             */
             evaluator.SquareInplace(encrypted);
             evaluator.RelinearizeInplace(encrypted, relinKeys);
-            Console.WriteLine("    + Noise budget after squaring:          {0} bits",
+            Console.WriteLine("    + Noise budget of the 8th power:        {0} bits",
                 decryptor.InvariantNoiseBudget(encrypted));
             evaluator.ModSwitchToNextInplace(encrypted);
             Console.WriteLine("    + Noise budget after modulus switching: {0} bits",
@@ -289,7 +291,7 @@ namespace SEALNetExamples
             chain.
             */
             decryptor.Decrypt(encrypted, plain);
-            Console.WriteLine("    + Decryption of fourth power (hexadecimal) ...... Correct.");
+            Console.WriteLine("    + Decryption of the 8th power (hexadecimal) ...... Correct.");
             Console.WriteLine($"    {plain}");
             Console.WriteLine();
 
@@ -298,7 +300,7 @@ namespace SEALNetExamples
             not want to create the modulus switching chain, except for the highest two
             levels. This can be done by passing a bool `false' to SEALContext constructor.
             */
-            context = new SEALContext(parms, expandModChain: false);
+            using SEALContext context2 = new SEALContext(parms, expandModChain: false);
 
             /*
             We can check that indeed the modulus switching chain has been created only
@@ -309,13 +311,13 @@ namespace SEALNetExamples
             Utilities.PrintLine();
             Console.WriteLine("Print the modulus switching chain.");
             Console.Write("----> ");
-            for (contextData = context.KeyContextData; null != contextData;
+            for (contextData = context2.KeyContextData; null != contextData;
                 contextData = contextData.NextContextData)
             {
                 Console.WriteLine($"Level (chain index): {contextData.ChainIndex}");
                 Console.WriteLine($"      ParmsId of encrypted: {contextData.ParmsId}");
                 Console.Write("      CoeffModulus primes: ");
-                foreach (SmallModulus prime in contextData.Parms.CoeffModulus)
+                foreach (Modulus prime in contextData.Parms.CoeffModulus)
                 {
                     Console.Write($"{Utilities.ULongToString(prime.Value)} ");
                 }

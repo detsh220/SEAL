@@ -40,7 +40,7 @@ void example_bfv_basics()
     be large enough to support the desired computation; otherwise the result is
     impossible to make sense of even with the secret key.
     */
-    EncryptionParameters parms(scheme_type::BFV);
+    EncryptionParameters parms(scheme_type::bfv);
 
     /*
     The first parameter we set is the degree of the `polynomial modulus'. This
@@ -62,7 +62,7 @@ void example_bfv_basics()
     Next we set the [ciphertext] `coefficient modulus' (coeff_modulus). This
     parameter is a large integer, which is a product of distinct prime numbers,
     each up to 60 bits in size. It is represented as a vector of these prime
-    numbers, each represented by an instance of the SmallModulus class. The
+    numbers, each represented by an instance of the Modulus class. The
     bit-length of coeff_modulus means the sum of the bit-lengths of its prime
     factors.
 
@@ -95,7 +95,7 @@ void example_bfv_basics()
 
         CoeffModulus::BFVDefault(poly_modulus_degree),
 
-    which returns std::vector<SmallModulus> consisting of a generally good choice
+    which returns std::vector<Modulus> consisting of a generally good choice
     for the given poly_modulus_degree.
     */
     parms.set_coeff_modulus(CoeffModulus::BFVDefault(poly_modulus_degree));
@@ -117,14 +117,14 @@ void example_bfv_basics()
     The plaintext modulus is specific to the BFV scheme, and cannot be set when
     using the CKKS scheme.
     */
-    parms.set_plain_modulus(256);
+    parms.set_plain_modulus(1024);
 
     /*
     Now that all parameters are set, we are ready to construct a SEALContext
     object. This is a heavy class that checks the validity and properties of the
     parameters we just set.
     */
-    auto context = SEALContext::Create(parms);
+    SEALContext context(parms);
 
     /*
     Print the parameters that we have chosen.
@@ -133,8 +133,14 @@ void example_bfv_basics()
     cout << "Set encryption parameters and print" << endl;
     print_parameters(context);
 
+    /*
+    When parameters are used to create SEALContext, Microsoft SEAL will first
+    validate those parameters. The parameters chosen here are valid.
+    */
+    cout << "Parameter validation (success): " << context.parameter_error_message() << endl;
+
     cout << endl;
-    cout << "~~~~~~ A naive way to calculate 2(x^2+1)(x+1)^2. ~~~~~~" << endl;
+    cout << "~~~~~~ A naive way to calculate 4(x^2+1)(x+1)^2. ~~~~~~" << endl;
 
     /*
     The encryption schemes in Microsoft SEAL are public key encryption schemes.
@@ -146,16 +152,23 @@ void example_bfv_basics()
 
     We are now ready to generate the secret and public keys. For this purpose
     we need an instance of the KeyGenerator class. Constructing a KeyGenerator
-    automatically generates the public and secret key, which can immediately be
-    read to local variables.
+    automatically generates a secret key. We can then create as many public
+    keys for it as we want using KeyGenerator::create_public_key.
+
+    Note that KeyGenerator::create_public_key has another overload that takes
+    no parameters and returns a Serializable<PublicKey> object. We will discuss
+    this in `6_serialization.cpp'.
     */
     KeyGenerator keygen(context);
-    PublicKey public_key = keygen.public_key();
     SecretKey secret_key = keygen.secret_key();
+    PublicKey public_key;
+    keygen.create_public_key(public_key);
 
     /*
     To be able to encrypt we need to construct an instance of Encryptor. Note
-    that the Encryptor only requires the public key, as expected.
+    that the Encryptor only requires the public key, as expected. It is also
+    possible to use Microsoft SEAL in secret-key mode by providing the Encryptor
+    the secret key instead. We will discuss this in `6_serialization.cpp'.
     */
     Encryptor encryptor(context, public_key);
 
@@ -176,11 +189,11 @@ void example_bfv_basics()
     /*
     As an example, we evaluate the degree 4 polynomial
 
-        2x^4 + 4x^3 + 4x^2 + 4x + 2
+        4x^4 + 8x^3 + 8x^2 + 8x + 4
 
     over an encrypted x = 6. The coefficients of the polynomial can be considered
     as plaintext inputs, as we will see below. The computation is done modulo the
-    plain_modulus 256.
+    plain_modulus 1024.
 
     While this examples is simple and easy to understand, it does not have much
     practical value. In later examples we will demonstrate how to compute more
@@ -199,11 +212,13 @@ void example_bfv_basics()
     print_line(__LINE__);
     int x = 6;
     Plaintext x_plain(to_string(x));
-    cout << "Express x = " + to_string(x) +
-        " as a plaintext polynomial 0x" + x_plain.to_string() + "." << endl;
+    cout << "Express x = " + to_string(x) + " as a plaintext polynomial 0x" + x_plain.to_string() + "." << endl;
 
     /*
-    We then encrypt the plaintext, producing a ciphertext.
+    We then encrypt the plaintext, producing a ciphertext. We note that the
+    Encryptor::encrypt function has another overload that takes as input only
+    a plaintext and returns a Serializable<Ciphertext> object. We will discuss
+    this in `6_serialization.cpp'.
     */
     print_line(__LINE__);
     Ciphertext x_encrypted;
@@ -222,8 +237,8 @@ void example_bfv_basics()
     /*
     There is plenty of noise budget left in this freshly encrypted ciphertext.
     */
-    cout << "    + noise budget in freshly encrypted x: "
-        << decryptor.invariant_noise_budget(x_encrypted) << " bits" << endl;
+    cout << "    + noise budget in freshly encrypted x: " << decryptor.invariant_noise_budget(x_encrypted) << " bits"
+         << endl;
 
     /*
     We decrypt the ciphertext and print the resulting plaintext in order to
@@ -242,10 +257,10 @@ void example_bfv_basics()
     consumption is proportional to the multiplicative depth. For example, for
     our example computation it is advantageous to factorize the polynomial as
 
-        2x^4 + 4x^3 + 4x^2 + 4x + 2 = 2(x + 1)^2 * (x^2 + 1)
+        4x^4 + 8x^3 + 8x^2 + 8x + 4 = 4(x + 1)^2 * (x^2 + 1)
 
     to obtain a simple depth 2 representation. Thus, we compute (x + 1)^2 and
-    (x^2 + 1) separately, before multiplying them, and multiplying by 2.
+    (x^2 + 1) separately, before multiplying them, and multiplying by 4.
 
     First, we compute x^2 and add a plaintext "1". We can clearly see from the
     print-out that multiplication has consumed a lot of noise budget. The user
@@ -267,8 +282,8 @@ void example_bfv_basics()
     consumption.
     */
     cout << "    + size of x_sq_plus_one: " << x_sq_plus_one.size() << endl;
-    cout << "    + noise budget in x_sq_plus_one: "
-        << decryptor.invariant_noise_budget(x_sq_plus_one) << " bits" << endl;
+    cout << "    + noise budget in x_sq_plus_one: " << decryptor.invariant_noise_budget(x_sq_plus_one) << " bits"
+         << endl;
 
     /*
     Even though the size has grown, decryption works as usual as long as noise
@@ -288,29 +303,28 @@ void example_bfv_basics()
     evaluator.add_plain(x_encrypted, plain_one, x_plus_one_sq);
     evaluator.square_inplace(x_plus_one_sq);
     cout << "    + size of x_plus_one_sq: " << x_plus_one_sq.size() << endl;
-    cout << "    + noise budget in x_plus_one_sq: "
-        << decryptor.invariant_noise_budget(x_plus_one_sq)
-        << " bits" << endl;
+    cout << "    + noise budget in x_plus_one_sq: " << decryptor.invariant_noise_budget(x_plus_one_sq) << " bits"
+         << endl;
     cout << "    + decryption of x_plus_one_sq: ";
     decryptor.decrypt(x_plus_one_sq, decrypted_result);
     cout << "0x" << decrypted_result.to_string() << " ...... Correct." << endl;
 
     /*
-    Finally, we multiply (x^2 + 1) * (x + 1)^2 * 2.
+    Finally, we multiply (x^2 + 1) * (x + 1)^2 * 4.
     */
     print_line(__LINE__);
-    cout << "Compute encrypted_result (2(x^2+1)(x+1)^2)." << endl;
+    cout << "Compute encrypted_result (4(x^2+1)(x+1)^2)." << endl;
     Ciphertext encrypted_result;
-    Plaintext plain_two("2");
-    evaluator.multiply_plain_inplace(x_sq_plus_one, plain_two);
+    Plaintext plain_four("4");
+    evaluator.multiply_plain_inplace(x_sq_plus_one, plain_four);
     evaluator.multiply(x_sq_plus_one, x_plus_one_sq, encrypted_result);
     cout << "    + size of encrypted_result: " << encrypted_result.size() << endl;
-    cout << "    + noise budget in encrypted_result: "
-        << decryptor.invariant_noise_budget(encrypted_result) << " bits" << endl;
+    cout << "    + noise budget in encrypted_result: " << decryptor.invariant_noise_budget(encrypted_result) << " bits"
+         << endl;
     cout << "NOTE: Decryption can be incorrect if noise budget is zero." << endl;
 
     cout << endl;
-    cout << "~~~~~~ A better way to calculate 2(x^2+1)(x+1)^2. ~~~~~~" << endl;
+    cout << "~~~~~~ A better way to calculate 4(x^2+1)(x+1)^2. ~~~~~~" << endl;
 
     /*
     Noise budget has reached 0, which means that decryption cannot be expected
@@ -335,12 +349,11 @@ void example_bfv_basics()
     Relinearization is used similarly in both the BFV and the CKKS schemes, but
     in this example we continue using BFV. We repeat our computation from before,
     but this time relinearize after every multiplication.
-
-    We use KeyGenerator::relin_keys() to create relinearization keys.
     */
     print_line(__LINE__);
     cout << "Generate relinearization keys." << endl;
-    auto relin_keys = keygen.relin_keys();
+    RelinKeys relin_keys;
+    keygen.create_relin_keys(relin_keys);
 
     /*
     We now repeat the computation relinearizing after each multiplication.
@@ -352,11 +365,10 @@ void example_bfv_basics()
     evaluator.square(x_encrypted, x_squared);
     cout << "    + size of x_squared: " << x_squared.size() << endl;
     evaluator.relinearize_inplace(x_squared, relin_keys);
-    cout << "    + size of x_squared (after relinearization): "
-        << x_squared.size() << endl;
+    cout << "    + size of x_squared (after relinearization): " << x_squared.size() << endl;
     evaluator.add_plain(x_squared, plain_one, x_sq_plus_one);
-    cout << "    + noise budget in x_sq_plus_one: "
-        << decryptor.invariant_noise_budget(x_sq_plus_one) << " bits" << endl;
+    cout << "    + noise budget in x_sq_plus_one: " << decryptor.invariant_noise_budget(x_sq_plus_one) << " bits"
+         << endl;
     cout << "    + decryption of x_sq_plus_one: ";
     decryptor.decrypt(x_sq_plus_one, decrypted_result);
     cout << "0x" << decrypted_result.to_string() << " ...... Correct." << endl;
@@ -364,28 +376,26 @@ void example_bfv_basics()
     print_line(__LINE__);
     Ciphertext x_plus_one;
     cout << "Compute x_plus_one (x+1)," << endl;
-    cout << string(13, ' ')
-        << "then compute and relinearize x_plus_one_sq ((x+1)^2)." << endl;
+    cout << string(13, ' ') << "then compute and relinearize x_plus_one_sq ((x+1)^2)." << endl;
     evaluator.add_plain(x_encrypted, plain_one, x_plus_one);
     evaluator.square(x_plus_one, x_plus_one_sq);
     cout << "    + size of x_plus_one_sq: " << x_plus_one_sq.size() << endl;
     evaluator.relinearize_inplace(x_plus_one_sq, relin_keys);
-    cout << "    + noise budget in x_plus_one_sq: "
-        << decryptor.invariant_noise_budget(x_plus_one_sq) << " bits" << endl;
+    cout << "    + noise budget in x_plus_one_sq: " << decryptor.invariant_noise_budget(x_plus_one_sq) << " bits"
+         << endl;
     cout << "    + decryption of x_plus_one_sq: ";
     decryptor.decrypt(x_plus_one_sq, decrypted_result);
     cout << "0x" << decrypted_result.to_string() << " ...... Correct." << endl;
 
     print_line(__LINE__);
-    cout << "Compute and relinearize encrypted_result (2(x^2+1)(x+1)^2)." << endl;
-    evaluator.multiply_plain_inplace(x_sq_plus_one, plain_two);
+    cout << "Compute and relinearize encrypted_result (4(x^2+1)(x+1)^2)." << endl;
+    evaluator.multiply_plain_inplace(x_sq_plus_one, plain_four);
     evaluator.multiply(x_sq_plus_one, x_plus_one_sq, encrypted_result);
     cout << "    + size of encrypted_result: " << encrypted_result.size() << endl;
     evaluator.relinearize_inplace(encrypted_result, relin_keys);
-    cout << "    + size of encrypted_result (after relinearization): "
-        << encrypted_result.size() << endl;
-    cout << "    + noise budget in encrypted_result: "
-        << decryptor.invariant_noise_budget(encrypted_result) << " bits" << endl;
+    cout << "    + size of encrypted_result (after relinearization): " << encrypted_result.size() << endl;
+    cout << "    + noise budget in encrypted_result: " << decryptor.invariant_noise_budget(encrypted_result) << " bits"
+         << endl;
 
     cout << endl;
     cout << "NOTE: Notice the increase in remaining noise budget." << endl;
@@ -395,15 +405,31 @@ void example_bfv_basics()
     of noise budget left, so we can expect the correct answer when decrypting.
     */
     print_line(__LINE__);
-    cout << "Decrypt encrypted_result (2(x^2+1)(x+1)^2)." << endl;
+    cout << "Decrypt encrypted_result (4(x^2+1)(x+1)^2)." << endl;
     decryptor.decrypt(encrypted_result, decrypted_result);
-    cout << "    + decryption of 2(x^2+1)(x+1)^2 = 0x"
-        << decrypted_result.to_string() << " ...... Correct." << endl;
+    cout << "    + decryption of 4(x^2+1)(x+1)^2 = 0x" << decrypted_result.to_string() << " ...... Correct." << endl;
     cout << endl;
 
     /*
-    For x=6, 2(x^2+1)(x+1)^2 = 3626. Since the plaintext modulus is set to 256,
-    this result is computed in integers modulo 256. Therefore the expected output
-    should be 3626 % 256 == 42, or 0x2A in hexadecimal.
+    For x=6, 4(x^2+1)(x+1)^2 = 7252. Since the plaintext modulus is set to 1024,
+    this result is computed in integers modulo 1024. Therefore the expected output
+    should be 7252 % 1024 == 84, or 0x54 in hexadecimal.
+    */
+
+    /*
+    Sometimes we create customized encryption parameters which turn out to be invalid.
+    Microsoft SEAL can interpret the reason why parameters are considered invalid.
+    Here we simply reduce the polynomial modulus degree to make the parameters not
+    compliant with the HomomorphicEncryption.org security standard.
+    */
+    print_line(__LINE__);
+    cout << "An example of invalid parameters" << endl;
+    parms.set_poly_modulus_degree(2048);
+    context = SEALContext(parms);
+    print_parameters(context);
+    cout << "Parameter validation (failed): " << context.parameter_error_message() << endl << endl;
+
+    /*
+    This information is helpful to fix invalid encryption parameters.
     */
 }

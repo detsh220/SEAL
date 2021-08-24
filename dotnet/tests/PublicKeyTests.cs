@@ -18,15 +18,14 @@ namespace SEALNetTest
             EncryptionParameters parms = new EncryptionParameters(SchemeType.BFV)
             {
                 PolyModulusDegree = 64,
-                PlainModulus = new SmallModulus(1 << 6),
+                PlainModulus = new Modulus(1 << 6),
                 CoeffModulus = CoeffModulus.Create(64, new int[] { 40 })
             };
             SEALContext context = new SEALContext(parms,
                 expandModChain: false,
                 secLevel: SecLevelType.None);
             KeyGenerator keygen = new KeyGenerator(context);
-
-            PublicKey pub = keygen.PublicKey;
+            keygen.CreatePublicKey(out PublicKey pub);
             PublicKey copy = new PublicKey(pub);
 
             Assert.IsNotNull(copy);
@@ -46,15 +45,14 @@ namespace SEALNetTest
             EncryptionParameters parms = new EncryptionParameters(SchemeType.BFV)
             {
                 PolyModulusDegree = 64,
-                PlainModulus = new SmallModulus(1 << 6),
+                PlainModulus = new Modulus(1 << 6),
                 CoeffModulus = CoeffModulus.Create(64, new int[] { 40 })
             };
             SEALContext context = new SEALContext(parms,
                 expandModChain: false,
                 secLevel: SecLevelType.None);
             KeyGenerator keygen = new KeyGenerator(context);
-
-            PublicKey pub = keygen.PublicKey;
+            keygen.CreatePublicKey(out PublicKey pub);
 
             Assert.IsNotNull(pub);
             Assert.AreEqual(2ul, pub.Data.Size);
@@ -90,19 +88,19 @@ namespace SEALNetTest
             SEALContext context = GlobalContext.BFVContext;
             PublicKey key = new PublicKey();
 
-            Assert.ThrowsException<ArgumentNullException>(() => key = new PublicKey(null));
+            Utilities.AssertThrows<ArgumentNullException>(() => key = new PublicKey(null));
 
-            Assert.ThrowsException<ArgumentNullException>(() => key.Set(null));
+            Utilities.AssertThrows<ArgumentNullException>(() => key.Set(null));
 
-            Assert.ThrowsException<ArgumentNullException>(() => key.Save(null));
-            Assert.ThrowsException<ArgumentNullException>(() => key.UnsafeLoad(null));
+            Utilities.AssertThrows<ArgumentNullException>(() => key.Save(null));
+            Utilities.AssertThrows<ArgumentNullException>(() => key.UnsafeLoad(context, null));
+            Utilities.AssertThrows<ArgumentNullException>(() => key.UnsafeLoad(null, new MemoryStream()));
 
-            Assert.ThrowsException<ArgumentNullException>(() => key.Load(context, null));
-            Assert.ThrowsException<ArgumentNullException>(() => key.Load(null, new MemoryStream()));
-            Assert.ThrowsException<ArgumentException>(() => key.Load(context, new MemoryStream()));
+            Utilities.AssertThrows<ArgumentNullException>(() => key.Load(context, null));
+            Utilities.AssertThrows<ArgumentNullException>(() => key.Load(null, new MemoryStream()));
+            Utilities.AssertThrows<EndOfStreamException>(() => key.Load(context, new MemoryStream()));
 
-            Assert.ThrowsException<ArgumentNullException>(() => ValCheck.IsValidFor(key, null));
-            Assert.ThrowsException<ArgumentNullException>(() => ValCheck.IsMetadataValidFor(key, null));
+            Utilities.AssertThrows<ArgumentNullException>(() => ValCheck.IsValidFor(key, null));
         }
     }
 }

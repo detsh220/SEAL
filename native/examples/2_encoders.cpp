@@ -27,136 +27,6 @@ In these examples we will discuss other ways of laying out data into plaintext
 elements (encoding) that allow more computations without data type overflow, and
 can allow the full plaintext polynomial to be utilized.
 */
-void example_integer_encoder()
-{
-    print_example_banner("Example: Encoders / Integer Encoder");
-
-    /*
-    [IntegerEncoder] (For BFV scheme only)
-
-    The IntegerEncoder encodes integers to BFV plaintext polynomials as follows.
-    First, a binary expansion of the integer is computed. Next, a polynomial is
-    created with the bits as coefficients. For example, the integer
-
-        26 = 2^4 + 2^3 + 2^1
-
-    is encoded as the polynomial 1x^4 + 1x^3 + 1x^1. Conversely, plaintext
-    polynomials are decoded by evaluating them at x=2. For negative numbers the
-    IntegerEncoder simply stores all coefficients as either 0 or -1, where -1 is
-    represented by the unsigned integer plain_modulus - 1 in memory.
-
-    Since encrypted computations operate on the polynomials rather than on the
-    encoded integers themselves, the polynomial coefficients will grow in the
-    course of such computations. For example, computing the sum of the encrypted
-    encoded integer 26 with itself will result in an encrypted polynomial with
-    larger coefficients: 2x^4 + 2x^3 + 2x^1. Squaring the encrypted encoded
-    integer 26 results also in increased coefficients due to cross-terms, namely,
-
-        (1x^4 + 1x^3 + 1x^1)^2 = 1x^8 + 2x^7 + 1x^6 + 2x^5 + 2x^4 + 1x^2;
-
-    further computations will quickly increase the coefficients much more.
-    Decoding will still work correctly in this case (evaluating the polynomial
-    at x=2), but since the coefficients of plaintext polynomials are really
-    integers modulo plain_modulus, implicit reduction modulo plain_modulus may
-    yield unexpected results. For example, adding 1x^4 + 1x^3 + 1x^1 to itself
-    plain_modulus many times will result in the constant polynomial 0, which is
-    clearly not equal to 26 * plain_modulus. It can be difficult to predict when
-    such overflow will take place especially when computing several sequential
-    multiplications.
-
-    The IntegerEncoder is easy to understand and use for simple computations,
-    and can be a good tool to experiment with for users new to Microsoft SEAL.
-    However, advanced users will probably prefer more efficient approaches,
-    such as the BatchEncoder or the CKKSEncoder.
-    */
-    EncryptionParameters parms(scheme_type::BFV);
-    size_t poly_modulus_degree = 4096;
-    parms.set_poly_modulus_degree(poly_modulus_degree);
-    parms.set_coeff_modulus(CoeffModulus::BFVDefault(poly_modulus_degree));
-
-    /*
-    There is no hidden logic behind our choice of the plain_modulus. The only
-    thing that matters is that the plaintext polynomial coefficients will not
-    exceed this value at any point during our computation; otherwise the result
-    will be incorrect.
-    */
-    parms.set_plain_modulus(512);
-    auto context = SEALContext::Create(parms);
-    print_parameters(context);
-    cout << endl;
-
-    KeyGenerator keygen(context);
-    PublicKey public_key = keygen.public_key();
-    SecretKey secret_key = keygen.secret_key();
-    Encryptor encryptor(context, public_key);
-    Evaluator evaluator(context);
-    Decryptor decryptor(context, secret_key);
-
-    /*
-    We create an IntegerEncoder.
-    */
-    IntegerEncoder encoder(context);
-
-    /*
-    First, we encode two integers as plaintext polynomials. Note that encoding
-    is not encryption: at this point nothing is encrypted.
-    */
-    int value1 = 5;
-    Plaintext plain1 = encoder.encode(value1);
-    print_line(__LINE__);
-    cout << "Encode " << value1 << " as polynomial " << plain1.to_string()
-        << " (plain1)," << endl;
-
-    int value2 = -7;
-    Plaintext plain2 = encoder.encode(value2);
-    cout << string(13, ' ') << "encode " << value2 << " as polynomial " << plain2.to_string()
-        << " (plain2)." << endl;
-
-    /*
-    Now we can encrypt the plaintext polynomials.
-    */
-    Ciphertext encrypted1, encrypted2;
-    print_line(__LINE__);
-    cout << "Encrypt plain1 to encrypted1 and plain2 to encrypted2." << endl;
-    encryptor.encrypt(plain1, encrypted1);
-    encryptor.encrypt(plain2, encrypted2);
-    cout << "    + Noise budget in encrypted1: "
-        << decryptor.invariant_noise_budget(encrypted1) << " bits" << endl;
-    cout << "    + Noise budget in encrypted2: "
-        << decryptor.invariant_noise_budget(encrypted2) << " bits" << endl;
-
-    /*
-    As a simple example, we compute (-encrypted1 + encrypted2) * encrypted2.
-    */
-    encryptor.encrypt(plain2, encrypted2);
-    Ciphertext encrypted_result;
-    print_line(__LINE__);
-    cout << "Compute encrypted_result = (-encrypted1 + encrypted2) * encrypted2." << endl;
-    evaluator.negate(encrypted1, encrypted_result);
-    evaluator.add_inplace(encrypted_result, encrypted2);
-    evaluator.multiply_inplace(encrypted_result, encrypted2);
-    cout << "    + Noise budget in encrypted_result: "
-        << decryptor.invariant_noise_budget(encrypted_result) << " bits" << endl;
-    Plaintext plain_result;
-    print_line(__LINE__);
-    cout << "Decrypt encrypted_result to plain_result." << endl;
-    decryptor.decrypt(encrypted_result, plain_result);
-
-    /*
-    Print the result plaintext polynomial. The coefficients are not even close
-    to exceeding our plain_modulus, 512.
-    */
-    cout << "    + Plaintext polynomial: " << plain_result.to_string() << endl;
-
-    /*
-    Decode to obtain an integer result.
-    */
-    print_line(__LINE__);
-    cout << "Decode plain_result." << endl;
-    cout << "    + Decoded integer: " << encoder.decode_int32(plain_result);
-    cout << "...... Correct." << endl;
-}
-
 void example_batch_encoder()
 {
     print_example_banner("Example: Encoders / Batch Encoder");
@@ -171,9 +41,9 @@ void example_batch_encoder()
     several orders of magnitude in fully vectorizable computations. Thus, in all
     but the simplest computations, batching should be the preferred method to use
     with BFV, and when used properly will result in implementations outperforming
-    anything done with the IntegerEncoder.
+    anything done without batching.
     */
-    EncryptionParameters parms(scheme_type::BFV);
+    EncryptionParameters parms(scheme_type::bfv);
     size_t poly_modulus_degree = 8192;
     parms.set_poly_modulus_degree(poly_modulus_degree);
     parms.set_coeff_modulus(CoeffModulus::BFVDefault(poly_modulus_degree));
@@ -186,7 +56,7 @@ void example_batch_encoder()
     */
     parms.set_plain_modulus(PlainModulus::Batching(poly_modulus_degree, 20));
 
-    auto context = SEALContext::Create(parms);
+    SEALContext context(parms);
     print_parameters(context);
     cout << endl;
 
@@ -194,13 +64,15 @@ void example_batch_encoder()
     We can verify that batching is indeed enabled by looking at the encryption
     parameter qualifiers created by SEALContext.
     */
-    auto qualifiers = context->first_context_data()->qualifiers();
+    auto qualifiers = context.first_context_data()->qualifiers();
     cout << "Batching enabled: " << boolalpha << qualifiers.using_batching << endl;
 
     KeyGenerator keygen(context);
-    PublicKey public_key = keygen.public_key();
     SecretKey secret_key = keygen.secret_key();
-    RelinKeys relin_keys = keygen.relin_keys();
+    PublicKey public_key;
+    keygen.create_public_key(public_key);
+    RelinKeys relin_keys;
+    keygen.create_relin_keys(relin_keys);
     Encryptor encryptor(context, public_key);
     Evaluator evaluator(context);
     Decryptor decryptor(context, secret_key);
@@ -264,8 +136,8 @@ void example_batch_encoder()
     print_line(__LINE__);
     cout << "Encrypt plain_matrix to encrypted_matrix." << endl;
     encryptor.encrypt(plain_matrix, encrypted_matrix);
-    cout << "    + Noise budget in encrypted_matrix: "
-        << decryptor.invariant_noise_budget(encrypted_matrix) << " bits" << endl;
+    cout << "    + Noise budget in encrypted_matrix: " << decryptor.invariant_noise_budget(encrypted_matrix) << " bits"
+         << endl;
 
     /*
     Operating on the ciphertext results in homomorphic operations being performed
@@ -280,7 +152,7 @@ void example_batch_encoder()
     vector<uint64_t> pod_matrix2;
     for (size_t i = 0; i < slot_count; i++)
     {
-        pod_matrix2.push_back((i % 2) + 1);
+        pod_matrix2.push_back((i & size_t(0x1)) + 1);
     }
     Plaintext plain_matrix2;
     batch_encoder.encode(pod_matrix2, plain_matrix2);
@@ -301,8 +173,7 @@ void example_batch_encoder()
     /*
     How much noise budget do we have left?
     */
-    cout << "    + Noise budget in result: "
-        << decryptor.invariant_noise_budget(encrypted_matrix) << " bits" << endl;
+    cout << "    + Noise budget in result: " << decryptor.invariant_noise_budget(encrypted_matrix) << " bits" << endl;
 
     /*
     We decrypt and decompose the plaintext to recover the result as a matrix.
@@ -345,17 +216,16 @@ void example_ckks_encoder()
             `ckks_basics.cpp'. In this example we use CoeffModulus::Create to
             generate 5 40-bit prime numbers.
     */
-    EncryptionParameters parms(scheme_type::CKKS);
+    EncryptionParameters parms(scheme_type::ckks);
 
     size_t poly_modulus_degree = 8192;
     parms.set_poly_modulus_degree(poly_modulus_degree);
-    parms.set_coeff_modulus(CoeffModulus::Create(
-        poly_modulus_degree, { 40, 40, 40, 40, 40 }));
+    parms.set_coeff_modulus(CoeffModulus::Create(poly_modulus_degree, { 40, 40, 40, 40, 40 }));
 
     /*
     We create the SEALContext as usual and print the parameters.
     */
-    auto context = SEALContext::Create(parms);
+    SEALContext context(parms);
     print_parameters(context);
     cout << endl;
 
@@ -363,9 +233,11 @@ void example_ckks_encoder()
     Keys are created the same way as for the BFV scheme.
     */
     KeyGenerator keygen(context);
-    auto public_key = keygen.public_key();
     auto secret_key = keygen.secret_key();
-    auto relin_keys = keygen.relin_keys();
+    PublicKey public_key;
+    keygen.create_public_key(public_key);
+    RelinKeys relin_keys;
+    keygen.create_relin_keys(relin_keys);
 
     /*
     We also set up an Encryptor, Evaluator, and Decryptor as usual.
@@ -376,7 +248,7 @@ void example_ckks_encoder()
 
     /*
     To create CKKS plaintexts we need a special encoder: there is no other way
-    to create them. The IntegerEncoder and BatchEncoder cannot be used with the
+    to create them. The BatchEncoder cannot be used with the
     CKKS scheme. The CKKSEncoder encodes vectors of real or complex numbers into
     Plaintext objects, which can subsequently be encrypted. At a high level this
     looks a lot like what BatchEncoder does for the BFV scheme, but the theory
@@ -411,7 +283,7 @@ void example_ckks_encoder()
 
     In CKKS the message is stored modulo coeff_modulus (in BFV it is stored modulo
     plain_modulus), so the scaled message must not get too close to the total size
-    of coeff_modulus. In this case our coeff_modulus is quite large (218 bits) so
+    of coeff_modulus. In this case our coeff_modulus is quite large (200 bits) so
     we have little to worry about in this regard. For this simple example a 30-bit
     scale is more than enough.
     */
@@ -450,8 +322,8 @@ void example_ckks_encoder()
     We notice that the scale in the result has increased. In fact, it is now the
     square of the original scale: 2^60.
     */
-    cout << "    + Scale in squared input: " << encrypted.scale()
-        << " (" << log2(encrypted.scale()) << " bits)" << endl;
+    cout << "    + Scale in squared input: " << encrypted.scale() << " (" << log2(encrypted.scale()) << " bits)"
+         << endl;
 
     print_line(__LINE__);
     cout << "Decrypt and decode." << endl;
@@ -475,7 +347,6 @@ void example_encoders()
     /*
     Run all encoder examples.
     */
-    example_integer_encoder();
     example_batch_encoder();
     example_ckks_encoder();
 }

@@ -1,14 +1,16 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+#include "seal/ciphertext.h"
+#include "seal/randomgen.h"
 #include "seal/randomtostd.h"
-#include "seal/util/rlwe.h"
-#include "seal/util/common.h"
 #include "seal/util/clipnormal.h"
-#include "seal/util/polycore.h"
-#include "seal/util/smallntt.h"
-#include "seal/util/polyarithsmallmod.h"
+#include "seal/util/common.h"
 #include "seal/util/globals.h"
+#include "seal/util/ntt.h"
+#include "seal/util/polyarithsmallmod.h"
+#include "seal/util/polycore.h"
+#include "seal/util/rlwe.h"
 
 using namespace std;
 
@@ -17,157 +19,193 @@ namespace seal
     namespace util
     {
         void sample_poly_ternary(
-            uint64_t *poly,
-            shared_ptr<UniformRandomGenerator> random,
-            const EncryptionParameters &parms)
+            shared_ptr<UniformRandomGenerator> prng, const EncryptionParameters &parms, uint64_t *destination)
         {
             auto coeff_modulus = parms.coeff_modulus();
-            size_t coeff_mod_count = coeff_modulus.size();
+            size_t coeff_modulus_size = coeff_modulus.size();
             size_t coeff_count = parms.poly_modulus_degree();
-            RandomToStandardAdapter engine(random);
-            uniform_int_distribution<int> dist(-1, 1);
 
-            for (size_t i = 0; i < coeff_count; i++)
-            {
-                int rand_index = dist(engine);
-                if (rand_index == 1)
-                {
-                    for (size_t j = 0; j < coeff_mod_count; j++)
-                    {
-                        poly[i + j * coeff_count] = 1;
-                    }
-                }
-                else if (rand_index == -1)
-                {
-                    for (size_t j = 0; j < coeff_mod_count; j++)
-                    {
-                        poly[i + j * coeff_count] = coeff_modulus[j].value() - 1;
-                    }
-                }
-                else
-                {
-                    for (size_t j = 0; j < coeff_mod_count; j++)
-                    {
-                        poly[i + j * coeff_count] = 0;
-                    }
-                }
-            }
+            RandomToStandardAdapter engine(prng);
+            uniform_int_distribution<uint64_t> dist(0, 2);
+
+            SEAL_ITERATE(iter(destination), coeff_count, [&](auto &I) {
+                uint64_t rand = dist(engine);
+                uint64_t flag = static_cast<uint64_t>(-static_cast<int64_t>(rand == 0));
+                SEAL_ITERATE(
+                    iter(StrideIter<uint64_t *>(&I, coeff_count), coeff_modulus), coeff_modulus_size,
+                    [&](auto J) { *get<0>(J) = rand + (flag & get<1>(J).value()) - 1; });
+            });
         }
 
         void sample_poly_normal(
-            uint64_t *poly,
-            shared_ptr<UniformRandomGenerator> random,
-            const EncryptionParameters &parms)
+            shared_ptr<UniformRandomGenerator> prng, const EncryptionParameters &parms, uint64_t *destination)
         {
             auto coeff_modulus = parms.coeff_modulus();
-            size_t coeff_mod_count = coeff_modulus.size();
+            size_t coeff_modulus_size = coeff_modulus.size();
             size_t coeff_count = parms.poly_modulus_degree();
 
             if (are_close(global_variables::noise_max_deviation, 0.0))
             {
-                set_zero_poly(coeff_count, coeff_mod_count, poly);
+                set_zero_poly(coeff_count, coeff_modulus_size, destination);
                 return;
             }
 
-            RandomToStandardAdapter engine(random);
+            RandomToStandardAdapter engine(prng);
             ClippedNormalDistribution dist(
-                0, global_variables::noise_standard_deviation,
-                global_variables::noise_max_deviation);
-            for (size_t i = 0; i < coeff_count; i++)
-            {
+                0, global_variables::noise_standard_deviation, global_variables::noise_max_deviation);
+
+            SEAL_ITERATE(iter(destination), coeff_count, [&](auto &I) {
                 int64_t noise = static_cast<int64_t>(dist(engine));
-                if (noise > 0)
-                {
-                    for (size_t j = 0; j < coeff_mod_count; j++)
+                uint64_t flag = static_cast<uint64_t>(-static_cast<int64_t>(noise < 0));
+                SEAL_ITERATE(
+                    iter(StrideIter<uint64_t *>(&I, coeff_count), coeff_modulus), coeff_modulus_size,
+                    [&](auto J) { *get<0>(J) = static_cast<uint64_t>(noise) + (flag & get<1>(J).value()); });
+            });
+        }
+
+        void sample_poly_cbd(
+            shared_ptr<UniformRandomGenerator> prng, const EncryptionParameters &parms, uint64_t *destination)
+        {
+            auto coeff_modulus = parms.coeff_modulus();
+            size_t coeff_modulus_size = coeff_modulus.size();
+            size_t coeff_count = parms.poly_modulus_degree();
+
+            if (are_close(global_variables::noise_max_deviation, 0.0))
+            {
+                set_zero_poly(coeff_count, coeff_modulus_size, destination);
+                return;
+            }
+
+            if (!are_close(global_variables::noise_standard_deviation, 3.2))
+            {
+                throw logic_error("centered binomial distribution only supports standard deviation 3.2; use rounded "
+                                  "Gaussian instead");
+            }
+
+            auto cbd = [&]() {
+                unsigned char x[6];
+                prng->generate(6, reinterpret_cast<seal_byte *>(x));
+                x[2] &= 0x1F;
+                x[5] &= 0x1F;
+                return hamming_weight(x[0]) + hamming_weight(x[1]) + hamming_weight(x[2]) - hamming_weight(x[3]) -
+                       hamming_weight(x[4]) - hamming_weight(x[5]);
+            };
+
+            SEAL_ITERATE(iter(destination), coeff_count, [&](auto &I) {
+                int32_t noise = cbd();
+                uint64_t flag = static_cast<uint64_t>(-static_cast<int64_t>(noise < 0));
+                SEAL_ITERATE(
+                    iter(StrideIter<uint64_t *>(&I, coeff_count), coeff_modulus), coeff_modulus_size,
+                    [&](auto J) { *get<0>(J) = static_cast<uint64_t>(noise) + (flag & get<1>(J).value()); });
+            });
+        }
+
+        void sample_poly_uniform(
+            shared_ptr<UniformRandomGenerator> prng, const EncryptionParameters &parms, uint64_t *destination)
+        {
+            // Extract encryption parameters
+            auto coeff_modulus = parms.coeff_modulus();
+            size_t coeff_modulus_size = coeff_modulus.size();
+            size_t coeff_count = parms.poly_modulus_degree();
+            size_t dest_byte_count = mul_safe(coeff_modulus_size, coeff_count, sizeof(uint64_t));
+
+            constexpr uint64_t max_random = static_cast<uint64_t>(0xFFFFFFFFFFFFFFFFULL);
+
+            // Fill the destination buffer with fresh randomness
+            prng->generate(dest_byte_count, reinterpret_cast<seal_byte *>(destination));
+
+            for (size_t j = 0; j < coeff_modulus_size; j++)
+            {
+                auto &modulus = coeff_modulus[j];
+                uint64_t max_multiple = max_random - barrett_reduce_64(max_random, modulus) - 1;
+                transform(destination, destination + coeff_count, destination, [&](uint64_t rand) {
+                    // This ensures uniform distribution
+                    while (rand >= max_multiple)
                     {
-                        poly[i + j * coeff_count] = static_cast<uint64_t>(noise);
+                        prng->generate(sizeof(uint64_t), reinterpret_cast<seal_byte *>(&rand));
                     }
-                }
-                else if (noise < 0)
+                    return barrett_reduce_64(rand, modulus);
+                });
+                destination += coeff_count;
+            }
+        }
+
+        void sample_poly_uniform_seal_3_4(
+            shared_ptr<UniformRandomGenerator> prng, const EncryptionParameters &parms, uint64_t *destination)
+        {
+            // Extract encryption parameters
+            auto coeff_modulus = parms.coeff_modulus();
+            size_t coeff_modulus_size = coeff_modulus.size();
+            size_t coeff_count = parms.poly_modulus_degree();
+
+            RandomToStandardAdapter engine(prng);
+
+            constexpr uint64_t max_random = static_cast<uint64_t>(0x7FFFFFFFFFFFFFFFULL);
+            for (size_t j = 0; j < coeff_modulus_size; j++)
+            {
+                auto &modulus = coeff_modulus[j];
+                uint64_t max_multiple = max_random - barrett_reduce_64(max_random, modulus) - 1;
+                for (size_t i = 0; i < coeff_count; i++)
                 {
-                    noise = -noise;
-                    for (size_t j = 0; j < coeff_mod_count; j++)
+                    // This ensures uniform distribution
+                    uint64_t rand;
+                    do
                     {
-                        poly[i + j * coeff_count] = coeff_modulus[j].value() -
-                            static_cast<uint64_t>(noise);
-                    }
-                }
-                else
-                {
-                    for (size_t j = 0; j < coeff_mod_count; j++)
-                    {
-                        poly[i + j * coeff_count] = 0;
-                    }
+                        rand = (static_cast<uint64_t>(engine()) << 31) | (static_cast<uint64_t>(engine()) >> 1);
+                    } while (rand >= max_multiple);
+                    destination[i + j * coeff_count] = barrett_reduce_64(rand, modulus);
                 }
             }
         }
 
-        void sample_poly_uniform(
-            uint64_t *poly,
-            shared_ptr<UniformRandomGenerator> random,
-            const EncryptionParameters &parms)
+        void sample_poly_uniform_seal_3_5(
+            shared_ptr<UniformRandomGenerator> prng, const EncryptionParameters &parms, uint64_t *destination)
         {
-            // Extract encryption parameters.
+            // Extract encryption parameters
             auto coeff_modulus = parms.coeff_modulus();
-            size_t coeff_mod_count = coeff_modulus.size();
+            size_t coeff_modulus_size = coeff_modulus.size();
             size_t coeff_count = parms.poly_modulus_degree();
 
-            // Set up source of randomness that produces 32 bit random things.
-            RandomToStandardAdapter engine(random);
+            RandomToStandardAdapter engine(prng);
 
-            uint64_t max_uint64 = numeric_limits<uint64_t>::max();
-            uint64_t modulus = 0;
-            uint64_t max_multiple = 0;
-
-            for (size_t j = 0; j < coeff_mod_count; j++)
+            constexpr uint64_t max_random = static_cast<uint64_t>(0xFFFFFFFFFFFFFFFFULL);
+            for (size_t j = 0; j < coeff_modulus_size; j++)
             {
-                modulus = coeff_modulus[j].value();
-                max_multiple = max_uint64 - max_uint64 % modulus;
+                auto &modulus = coeff_modulus[j];
+                uint64_t max_multiple = max_random - barrett_reduce_64(max_random, modulus) - 1;
                 for (size_t i = 0; i < coeff_count; i++)
                 {
-                    // This ensures uniform distribution.
+                    // This ensures uniform distribution
                     uint64_t rand;
                     do
                     {
-                        rand = (static_cast<uint64_t>(engine()) << 32) +
-                            static_cast<uint64_t>(engine());
-                    }
-                    while (rand >= max_multiple);
-                    poly[i + j * coeff_count] = rand % modulus;
+                        rand = (static_cast<uint64_t>(engine()) << 32) | static_cast<uint64_t>(engine());
+                    } while (rand >= max_multiple);
+                    destination[i + j * coeff_count] = barrett_reduce_64(rand, modulus);
                 }
             }
         }
 
         void encrypt_zero_asymmetric(
-            const PublicKey &public_key,
-            shared_ptr<SEALContext> context,
-            parms_id_type parms_id,
-            shared_ptr<UniformRandomGenerator> random,
-            bool is_ntt_form,
-            Ciphertext &destination,
-            MemoryPoolHandle pool)
+            const PublicKey &public_key, const SEALContext &context, parms_id_type parms_id, bool is_ntt_form,
+            Ciphertext &destination)
         {
-            if (!pool)
+#ifdef SEAL_DEBUG
+            if (!is_valid_for(public_key, context))
             {
-                throw invalid_argument("pool is uninitialized");
+                throw invalid_argument("public key is not valid for the encryption parameters");
             }
-            if (public_key.parms_id() != context->key_parms_id())
-            {
-                throw invalid_argument("key_parms_id mismatch");
-            }
+#endif
+            // We use a fresh memory pool with `clear_on_destruction' enabled
+            MemoryPoolHandle pool = MemoryManager::GetPool(mm_prof_opt::mm_force_new, true);
 
-            auto &context_data = *context->get_context_data(parms_id);
+            auto &context_data = *context.get_context_data(parms_id);
             auto &parms = context_data.parms();
             auto &coeff_modulus = parms.coeff_modulus();
-            size_t coeff_mod_count = coeff_modulus.size();
+            size_t coeff_modulus_size = coeff_modulus.size();
             size_t coeff_count = parms.poly_modulus_degree();
-            auto &small_ntt_tables = context_data.small_ntt_tables();
+            auto ntt_tables = context_data.small_ntt_tables();
             size_t encrypted_size = public_key.data().size();
-
-            if (encrypted_size < 2)
-            {
-                throw invalid_argument("public_key has less than 2 parts");
-            }
 
             // Make destination have right size and parms_id
             // Ciphertext (c_0,c_1, ...)
@@ -175,125 +213,166 @@ namespace seal
             destination.is_ntt_form() = is_ntt_form;
             destination.scale() = 1.0;
 
-            // c[j] = public_key[j] * u + e[j] where e[j] <-- chi, u <-- R_3.
+            // c[j] = public_key[j] * u + e[j] where e[j] <-- chi, u <-- R_3
+
+            // Create a PRNG; u and the noise/error share the same PRNG
+            auto prng = parms.random_generator()->create();
 
             // Generate u <-- R_3
-            auto u(allocate_poly(coeff_count, coeff_mod_count, pool));
-            sample_poly_ternary(u.get(), random, parms);
+            auto u(allocate_poly(coeff_count, coeff_modulus_size, pool));
+            sample_poly_ternary(prng, parms, u.get());
 
             // c[j] = u * public_key[j]
-            for (size_t i = 0; i < coeff_mod_count; i++)
+            for (size_t i = 0; i < coeff_modulus_size; i++)
             {
-                ntt_negacyclic_harvey(
-                    u.get() + i * coeff_count,
-                    small_ntt_tables[i]);
+                ntt_negacyclic_harvey(u.get() + i * coeff_count, ntt_tables[i]);
                 for (size_t j = 0; j < encrypted_size; j++)
                 {
                     dyadic_product_coeffmod(
-                        u.get() + i * coeff_count,
-                        public_key.data().data(j) + i * coeff_count,
-                        coeff_count,
-                        coeff_modulus[i],
-                        destination.data(j) + i * coeff_count);
+                        u.get() + i * coeff_count, public_key.data().data(j) + i * coeff_count, coeff_count,
+                        coeff_modulus[i], destination.data(j) + i * coeff_count);
 
-                    // addition with e_0, e_1 is in non-NTT form.
+                    // Addition with e_0, e_1 is in non-NTT form
                     if (!is_ntt_form)
                     {
-                        inverse_ntt_negacyclic_harvey(
-                            destination.data(j) + i * coeff_count,
-                            small_ntt_tables[i]);
+                        inverse_ntt_negacyclic_harvey(destination.data(j) + i * coeff_count, ntt_tables[i]);
                     }
                 }
             }
 
-            // Generate e_j <-- chi.
+            // Generate e_j <-- chi
             // c[j] = public_key[j] * u + e[j]
-            for (size_t j = 0; j < 2; j++)
+            for (size_t j = 0; j < encrypted_size; j++)
             {
-                sample_poly_normal(u.get(), random, parms);
-                for (size_t i = 0; i < coeff_mod_count; i++)
+                SEAL_NOISE_SAMPLER(prng, parms, u.get());
+                for (size_t i = 0; i < coeff_modulus_size; i++)
                 {
-                    // addition with e_0, e_1 is in NTT form.
+                    // Addition with e_0, e_1 is in NTT form
                     if (is_ntt_form)
                     {
-                        ntt_negacyclic_harvey(
-                            u.get() + i * coeff_count,
-                            small_ntt_tables[i]);
+                        ntt_negacyclic_harvey(u.get() + i * coeff_count, ntt_tables[i]);
                     }
-                    add_poly_poly_coeffmod(
-                        u.get() + i * coeff_count,
-                        destination.data(j) + i * coeff_count,
-                        coeff_count,
-                        coeff_modulus[i],
+                    add_poly_coeffmod(
+                        u.get() + i * coeff_count, destination.data(j) + i * coeff_count, coeff_count, coeff_modulus[i],
                         destination.data(j) + i * coeff_count);
                 }
             }
         }
 
         void encrypt_zero_symmetric(
-            const SecretKey &secret_key,
-            shared_ptr<SEALContext> context,
-            parms_id_type parms_id,
-            shared_ptr<UniformRandomGenerator> random,
-            bool is_ntt_form,
-            Ciphertext &destination,
-            MemoryPoolHandle pool)
+            const SecretKey &secret_key, const SEALContext &context, parms_id_type parms_id, bool is_ntt_form,
+            bool save_seed, Ciphertext &destination)
         {
-            if (!pool)
+#ifdef SEAL_DEBUG
+            if (!is_valid_for(secret_key, context))
             {
-                throw invalid_argument("pool is uninitialized");
+                throw invalid_argument("secret key is not valid for the encryption parameters");
             }
-            if (secret_key.parms_id() != context->key_parms_id())
-            {
-                throw invalid_argument("key_parms_id mismatch");
-            }
-            auto &context_data = *context->get_context_data(parms_id);
+#endif
+            // We use a fresh memory pool with `clear_on_destruction' enabled.
+            MemoryPoolHandle pool = MemoryManager::GetPool(mm_prof_opt::mm_force_new, true);
+
+            auto &context_data = *context.get_context_data(parms_id);
             auto &parms = context_data.parms();
             auto &coeff_modulus = parms.coeff_modulus();
-            size_t coeff_mod_count = coeff_modulus.size();
+            size_t coeff_modulus_size = coeff_modulus.size();
             size_t coeff_count = parms.poly_modulus_degree();
-            auto &small_ntt_tables = context_data.small_ntt_tables();
+            auto ntt_tables = context_data.small_ntt_tables();
             size_t encrypted_size = 2;
+
+            // If a polynomial is too small to store UniformRandomGeneratorInfo,
+            // it is best to just disable save_seed. Note that the size needed is
+            // the size of UniformRandomGeneratorInfo plus one (uint64_t) because
+            // of an indicator word that indicates a seeded ciphertext.
+            size_t poly_uint64_count = mul_safe(coeff_count, coeff_modulus_size);
+            size_t prng_info_byte_count =
+                static_cast<size_t>(UniformRandomGeneratorInfo::SaveSize(compr_mode_type::none));
+            size_t prng_info_uint64_count =
+                divide_round_up(prng_info_byte_count, static_cast<size_t>(bytes_per_uint64));
+            if (save_seed && poly_uint64_count < prng_info_uint64_count + 1)
+            {
+                save_seed = false;
+            }
 
             destination.resize(context, parms_id, encrypted_size);
             destination.is_ntt_form() = is_ntt_form;
             destination.scale() = 1.0;
 
+            // Create an instance of a random number generator. We use this for sampling
+            // a seed for a second PRNG used for sampling u (the seed can be public
+            // information. This PRNG is also used for sampling the noise/error below.
+            auto bootstrap_prng = parms.random_generator()->create();
+
+            // Sample a public seed for generating uniform randomness
+            prng_seed_type public_prng_seed;
+            bootstrap_prng->generate(prng_seed_byte_count, reinterpret_cast<seal_byte *>(public_prng_seed.data()));
+
+            // Set up a new default PRNG for expanding u from the seed sampled above
+            auto ciphertext_prng = UniformRandomGeneratorFactory::DefaultFactory()->create(public_prng_seed);
+
             // Generate ciphertext: (c[0], c[1]) = ([-(as+e)]_q, a)
+            uint64_t *c0 = destination.data();
+            uint64_t *c1 = destination.data(1);
 
             // Sample a uniformly at random
-            // Set c[1] = a (we sample the NTT form directly)
-            sample_poly_uniform(destination.data(1), random, parms);
+            if (is_ntt_form || !save_seed)
+            {
+                // Sample the NTT form directly
+                sample_poly_uniform(ciphertext_prng, parms, c1);
+            }
+            else if (save_seed)
+            {
+                // Sample non-NTT form and store the seed
+                sample_poly_uniform(ciphertext_prng, parms, c1);
+                for (size_t i = 0; i < coeff_modulus_size; i++)
+                {
+                    // Transform the c1 into NTT representation
+                    ntt_negacyclic_harvey(c1 + i * coeff_count, ntt_tables[i]);
+                }
+            }
 
             // Sample e <-- chi
-            auto noise(allocate_poly(coeff_count, coeff_mod_count, pool));
-            sample_poly_normal(noise.get(), random, parms);
+            auto noise(allocate_poly(coeff_count, coeff_modulus_size, pool));
+            SEAL_NOISE_SAMPLER(bootstrap_prng, parms, noise.get());
 
-            // calculate -(a*s + e) (mod q) and store in c[0]
-            for (size_t i = 0; i < coeff_mod_count; i++)
+            // Calculate -(a*s + e) (mod q) and store in c[0]
+            for (size_t i = 0; i < coeff_modulus_size; i++)
             {
-                // Transform the noise e into NTT representation.
-                ntt_negacyclic_harvey(
-                    noise.get() + i * coeff_count,
-                    small_ntt_tables[i]);
                 dyadic_product_coeffmod(
-                    secret_key.data().data() + i * coeff_count,
-                    destination.data(1) + i * coeff_count,
-                    coeff_count,
-                    coeff_modulus[i],
-                    destination.data() + i * coeff_count);
-                add_poly_poly_coeffmod(
-                    noise.get() + i * coeff_count,
-                    destination.data() + i * coeff_count,
-                    coeff_count,
-                    coeff_modulus[i],
-                    destination.data() + i * coeff_count);
-                negate_poly_coeffmod(
-                    destination.data() + i * coeff_count,
-                    coeff_count,
-                    coeff_modulus[i],
-                    destination.data() + i * coeff_count);
+                    secret_key.data().data() + i * coeff_count, c1 + i * coeff_count, coeff_count, coeff_modulus[i],
+                    c0 + i * coeff_count);
+                if (is_ntt_form)
+                {
+                    // Transform the noise e into NTT representation
+                    ntt_negacyclic_harvey(noise.get() + i * coeff_count, ntt_tables[i]);
+                }
+                else
+                {
+                    inverse_ntt_negacyclic_harvey(c0 + i * coeff_count, ntt_tables[i]);
+                }
+                add_poly_coeffmod(
+                    noise.get() + i * coeff_count, c0 + i * coeff_count, coeff_count, coeff_modulus[i],
+                    c0 + i * coeff_count);
+                negate_poly_coeffmod(c0 + i * coeff_count, coeff_count, coeff_modulus[i], c0 + i * coeff_count);
+            }
+
+            if (!is_ntt_form && !save_seed)
+            {
+                for (size_t i = 0; i < coeff_modulus_size; i++)
+                {
+                    // Transform the c1 into non-NTT representation
+                    inverse_ntt_negacyclic_harvey(c1 + i * coeff_count, ntt_tables[i]);
+                }
+            }
+
+            if (save_seed)
+            {
+                UniformRandomGeneratorInfo prng_info = ciphertext_prng->info();
+
+                // Write prng_info to destination.data(1) after an indicator word
+                c1[0] = static_cast<uint64_t>(0xFFFFFFFFFFFFFFFFULL);
+                prng_info.save(reinterpret_cast<seal_byte *>(c1 + 1), prng_info_byte_count, compr_mode_type::none);
             }
         }
-    }
-}
+    } // namespace util
+} // namespace seal
